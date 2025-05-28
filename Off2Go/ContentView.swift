@@ -92,8 +92,8 @@ struct ContentView: View {
         // 設置外觀
         setupAppearance()
         
-        // 延遲檢查權限，確保視圖已完全載入
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // 延遲檢查權限，確保視圖已完全載入，並且不會太頻繁調用
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             self.checkPermissions()
         }
     }
@@ -117,11 +117,12 @@ struct ContentView: View {
     private func checkPermissions() {
         print("🔍 [ContentView] 開始檢查應用權限...")
         
-        // 檢查位置權限
-        locationService.updateAuthorizationStatus()
+        // 不要在這裡調用任何位置管理器方法，避免主線程警告
+        let currentStatus = locationService.getCurrentAuthorizationStatus()
         let (canUse, reason) = locationService.checkLocationServiceStatus()
         
         print("📍 [ContentView] 位置服務狀態: \(canUse ? "正常" : "異常") - \(reason)")
+        print("📍 [ContentView] 實際權限狀態: \(locationService.statusString(for: currentStatus))")
         
         // 檢查通知權限
         UNUserNotificationCenter.current().getNotificationSettings { settings in
@@ -135,7 +136,7 @@ struct ContentView: View {
                 }
                 
                 // 只有在位置權限明確被拒絕時才顯示提示
-                if self.locationService.authorizationStatus == .denied {
+                if currentStatus == .denied {
                     print("⚠️ [ContentView] 位置權限被拒絕，顯示提示")
                     self.showingPermissionAlert = true
                 }

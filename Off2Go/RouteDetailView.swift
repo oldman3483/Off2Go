@@ -25,28 +25,30 @@ struct RouteDetailView: View {
     @State private var permissionCheckInProgress = false
     @State private var cancellables = Set<AnyCancellable>()
     
+    // 權限狀態追蹤
+    @State private var lastPermissionCheck: Date?
     
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // 路线信息卡片
+                // 路線信息卡片
                 routeInfoCard
                 
                 // 方向選擇
                 directionSelector
                 
-                // 音频设置快速访问
+                // 音頻設定快速存取
                 audioControlCard
                 
-                // 监控状态卡片
+                // 監控狀態卡片
                 if monitoringService.isMonitoring {
                     monitoringStatusCard
                 }
                 
-                // 站点列表
+                // 站點列表
                 stopsListView
                 
-                // 监控按钮
+                // 監控按鈕
                 monitoringButton
             }
             .padding(.horizontal, 16)
@@ -108,23 +110,25 @@ struct RouteDetailView: View {
         }
     }
     
-    // 設置權限監聽
+    // MARK: - 設置權限監聽
+    
     private func setupPermissionMonitoring() {
-        // 監聽位置權限變化
         locationService.$authorizationStatus
+            .removeDuplicates()
             .sink { status in
                 print("🔄 [RouteDetail] 位置權限狀態變化: \(locationService.authorizationStatusString)")
                 
                 // 如果權限變成可用，自動隱藏警告
                 if status == .authorizedWhenInUse || status == .authorizedAlways {
                     showingLocationAlert = false
+                    permissionCheckInProgress = false
                 }
             }
             .store(in: &cancellables)
     }
     
-    // MARK: - 音频控制卡片
-        
+    // MARK: - 音頻控制卡片
+    
     private var audioControlCard: some View {
         VStack(spacing: 12) {
             HStack {
@@ -178,7 +182,7 @@ struct RouteDetailView: View {
                         .disabled(monitoringService.stops.isEmpty)
                     }
                     
-                    // 提醒距离
+                    // 提醒距離
                     HStack {
                         Image(systemName: "location.circle")
                             .foregroundColor(.green)
@@ -209,13 +213,13 @@ struct RouteDetailView: View {
                         }
                     }
                     
-                    // 耳机状态
+                    // 耳機狀態
                     HStack {
                         Image(systemName: audioService.isHeadphonesConnected ? "headphones" : "speaker.wave.2")
                             .foregroundColor(audioService.isHeadphonesConnected ? .green : .orange)
                             .font(.caption)
                         
-                        Text(audioService.isHeadphonesConnected ? "耳机已连接" : "建议使用耳机")
+                        Text(audioService.isHeadphonesConnected ? "耳機已連接" : "建議使用耳機")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -243,15 +247,26 @@ struct RouteDetailView: View {
         )
     }
     
+    // MARK: - 權限檢查和監控邏輯
+    
     // 重新檢查權限狀態
     private func checkPermissionStatusAndRetry() {
         print("🔄 [RouteDetail] 重新檢查權限狀態")
         
-        // 更新權限狀態
-        locationService.updateAuthorizationStatus()
+        // 防止頻繁檢查
+        let now = Date()
+        if let lastCheck = lastPermissionCheck,
+           now.timeIntervalSince(lastCheck) < 2.0 {
+            print("⚠️ [RouteDetail] 權限檢查過於頻繁，跳過")
+            return
+        }
+        lastPermissionCheck = now
         
-        // 延遲一下再檢查，給系統時間更新
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // 更新權限狀態
+        locationService.updateAuthorizationStatusSafely()
+        
+        // 延遲檢查結果
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             let (canUse, reason) = self.locationService.checkLocationServiceStatus()
             
             if canUse {
@@ -259,17 +274,19 @@ struct RouteDetailView: View {
                 self.startMonitoringDirectly()
             } else {
                 print("⚠️ [RouteDetail] 重新檢查後仍無權限: \(reason)")
-                // 保持警告顯示，讓用戶知道問題仍然存在
+                // 保持警告顯示
             }
         }
     }
-        
+    
     // 開啟應用設定
     private func openAppSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
     }
+    
+    // MARK: - UI 組件
     
     // 路線信息卡片
     private var routeInfoCard: some View {
@@ -412,7 +429,6 @@ struct RouteDetailView: View {
                     }
                 }
                 .padding(.top, 8)
-                .padding(.top, 8)
             }
         }
         .padding(16)
@@ -483,7 +499,6 @@ struct RouteDetailView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     
-                    // 添加載入提示
                     Text("路線: \(route.RouteName.Zh_tw)")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -541,10 +556,16 @@ struct RouteDetailView: View {
     private var monitoringButton: some View {
         Button(action: toggleMonitoring) {
             HStack(spacing: 12) {
-                Image(systemName: monitoringService.isMonitoring ? "stop.circle.fill" : "play.circle.fill")
-                    .font(.title2)
+                if permissionCheckInProgress {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                } else {
+                    Image(systemName: monitoringService.isMonitoring ? "stop.circle.fill" : "play.circle.fill")
+                        .font(.title2)
+                }
                 
-                Text(monitoringService.isMonitoring ? "停止監控" : "開始監控")
+                Text(permissionCheckInProgress ? "檢查權限中..." : (monitoringService.isMonitoring ? "停止監控" : "開始監控"))
                     .font(.headline)
                     .fontWeight(.semibold)
             }
@@ -552,13 +573,15 @@ struct RouteDetailView: View {
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(monitoringService.isMonitoring ? .red : .blue)
+                    .fill(permissionCheckInProgress ? .gray : (monitoringService.isMonitoring ? .red : .blue))
             )
             .foregroundColor(.white)
         }
         .buttonStyle(PlainButtonStyle())
-        .disabled(monitoringService.stops.isEmpty)
+        .disabled(monitoringService.stops.isEmpty || permissionCheckInProgress)
     }
+    
+    // MARK: - 監控控制邏輯
     
     // 切換監控狀態
     private func toggleMonitoring() {
@@ -575,18 +598,16 @@ struct RouteDetailView: View {
             return
         }
         
-        print("🔍 [RouteDetail] 開始監控前檢查...")
+        print("🔍 [RouteDetail] 準備開始監控...")
         
         // 檢查站點資料
         guard !monitoringService.stops.isEmpty else {
             print("❌ [RouteDetail] 無站點資料")
-            // 可以嘗試重新載入站點資料
             monitoringService.refreshData()
             return
         }
         
         // 開始權限檢查流程
-        permissionCheckInProgress = true
         checkPermissionsAndStartMonitoring()
     }
     
@@ -594,27 +615,46 @@ struct RouteDetailView: View {
     private func checkPermissionsAndStartMonitoring() {
         print("🔐 [RouteDetail] 開始權限檢查流程")
         
-        // 先更新位置服務狀態
-        locationService.updateAuthorizationStatus()
+        // 避免重複檢查
+        let now = Date()
+        if let lastCheck = lastPermissionCheck,
+           now.timeIntervalSince(lastCheck) < 1.0 {
+            print("⚠️ [RouteDetail] 權限檢查過於頻繁，跳過")
+            return
+        }
         
-        // 檢查位置服務狀態
-        let (canUse, reason) = locationService.checkLocationServiceStatus()
+        permissionCheckInProgress = true
+        lastPermissionCheck = now
+        
+        // 直接檢查當前狀態，不要等待更新
+        performPermissionCheck()
+    }
+    
+    private func performPermissionCheck() {
+        // 直接使用已儲存的權限狀態，不再查詢
+        let currentStatus = locationService.authorizationStatus
+        let servicesEnabled = CLLocationManager.locationServicesEnabled()
+        
+        print("🔍 [RouteDetail] 權限狀態檢查:")
+        print("   系統位置服務: \(servicesEnabled)")
+        print("   授權狀態: \(locationService.statusString(for: currentStatus))")
+        
+        let canUse = servicesEnabled && (currentStatus == .authorizedWhenInUse || currentStatus == .authorizedAlways)
         
         if canUse {
-            // 權限OK，直接開始監控
             print("✅ [RouteDetail] 位置權限正常，開始監控")
             startMonitoringDirectly()
         } else {
-            // 權限有問題，處理不同情況
-            handleLocationPermissionIssue(reason: reason)
+            let reason = servicesEnabled ? "位置權限狀態: \(locationService.statusString(for: currentStatus))" : "系統位置服務未開啟"
+            handleLocationPermissionIssue(reason: reason, status: currentStatus)
         }
     }
-        
+    
     // 處理位置權限問題
-    private func handleLocationPermissionIssue(reason: String) {
+    private func handleLocationPermissionIssue(reason: String, status: CLAuthorizationStatus) {
         print("⚠️ [RouteDetail] 位置權限問題: \(reason)")
         
-        switch locationService.authorizationStatus {
+        switch status {
         case .notDetermined:
             // 權限未決定，請求權限
             print("🔐 [RouteDetail] 權限未決定，請求權限")
@@ -628,44 +668,57 @@ struct RouteDetailView: View {
             
         default:
             // 其他情況，也顯示提示
-            print("❓ [RouteDetail] 其他權限狀態: \(locationService.authorizationStatusString)")
+            print("❓ [RouteDetail] 其他權限狀態: \(locationService.statusString(for: status))")
             permissionCheckInProgress = false
             showingLocationAlert = true
         }
     }
-        
+    
     // 請求位置權限並開始監控
     private func requestLocationPermissionAndStart() {
+        print("🔐 [RouteDetail] 開始請求位置權限...")
+        
         locationService.requestLocationPermission { success in
             DispatchQueue.main.async {
-                self.permissionCheckInProgress = false
+                permissionCheckInProgress = false
                 
                 if success {
                     print("✅ [RouteDetail] 權限獲取成功")
-                    self.startMonitoringDirectly()
+                    // 延遲一點確保權限狀態完全更新
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        startMonitoringDirectly()
+                    }
                 } else {
                     print("❌ [RouteDetail] 權限獲取失敗")
-                    self.showingLocationAlert = true
+                    showingLocationAlert = true
                 }
             }
         }
     }
-        
+    
     // 直接開始監控
     private func startMonitoringDirectly() {
         permissionCheckInProgress = false
         
-        // 最後確認一次狀態
-        guard locationService.hasLocationPermission else {
-            print("❌ [RouteDetail] 最終權限檢查失敗")
+        // 直接使用已儲存的權限狀態
+        let currentStatus = locationService.authorizationStatus
+        
+        guard currentStatus == .authorizedWhenInUse || currentStatus == .authorizedAlways else {
+            print("❌ [RouteDetail] 最終權限檢查失敗: \(locationService.statusString(for: currentStatus))")
             showingLocationAlert = true
+            return
+        }
+        
+        guard !monitoringService.stops.isEmpty else {
+            print("❌ [RouteDetail] 無站點資料，無法監控")
             return
         }
         
         print("🚀 [RouteDetail] 開始監控")
         monitoringService.startMonitoring()
     }
-
+    
+    // MARK: - 輔助方法
     
     // 計算到站點的距離
     private func calculateDistance(to stop: BusStop.Stop) -> Double {
@@ -704,7 +757,8 @@ struct RouteDetailView: View {
     }
 }
 
-// 站點行視圖
+// MARK: - 站點行視圖
+
 struct StopRowView: View {
     let stop: BusStop.Stop
     let index: Int
@@ -799,7 +853,8 @@ struct StopRowView: View {
     }
 }
 
-// 收藏按鈕組件
+// MARK: - 收藏按鈕組件
+
 struct FavoriteButton: View {
     let route: BusRoute
     @AppStorage("favoriteRoutes") private var favoriteRoutesData: Data = Data()
@@ -837,15 +892,4 @@ struct FavoriteButton: View {
             favoriteRoutesData = encoded
         }
     }
-}
-
-#Preview {
-    RouteDetailView(
-        route: BusRoute(
-            RouteID: "12345",
-            RouteName: BusRoute.RouteName(Zh_tw: "307", En: "307"),
-            DepartureStopNameZh: "台北車站",
-            DestinationStopNameZh: "松山車站"
-        )
-    )
 }

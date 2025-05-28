@@ -344,8 +344,10 @@ class StationMonitoringService: ObservableObject {
             return
         }
         
-        guard locationService.authorizationStatus == .authorizedAlways ||
-              locationService.authorizationStatus == .authorizedWhenInUse else {
+        // 直接使用已儲存的權限狀態
+        let currentStatus = locationService.authorizationStatus
+        
+        guard currentStatus == .authorizedAlways || currentStatus == .authorizedWhenInUse else {
             errorMessage = "需要位置權限才能開始監控"
             print("❌ [Monitor] 需要位置權限才能開始監控")
             return

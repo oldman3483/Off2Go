@@ -30,12 +30,16 @@ class AudioNotificationService: NSObject, ObservableObject {
     private var _speechRate: Float = 0.5
     private var _speechVolume: Float = 1.0
     
-    // 防重複播報機制 - 關鍵修復
+    // 防重複播報機制
     private var lastAnnouncementTime: Date?
     private var lastAnnouncementContent: String?
-    private let minimumAnnouncementInterval: TimeInterval = 10.0 // 最少間隔10秒
+    private let minimumAnnouncementInterval: TimeInterval = 8.0 // 增加間隔時間
     private var pendingSpeechQueue: [String] = []
     private var isSpeaking: Bool = false
+    
+    // 目的地設定狀態
+    private var isSettingDestination: Bool = false
+    private var lastDestinationSetTime: Date?
     
     // 監控狀態
     private var isMonitoring = false
@@ -62,35 +66,45 @@ class AudioNotificationService: NSObject, ObservableObject {
     
     // MARK: - 語音狀態管理
     
-    private func setupSpeechSynthesizerDelegate() {
+
+    func setupSpeechSynthesizerDelegate() {
         speechSynthesizer.delegate = self
     }
     
-    // 檢查是否可以播報（防重複核心邏輯）
+    // 檢查是否可以播報
     private func canAnnounce(_ content: String) -> Bool {
         let now = Date()
         
         // 檢查是否正在播報
         if isSpeaking || speechSynthesizer.isSpeaking {
-            print("🔇 [Audio] 正在播報中，跳過新的播報")
+            print("🔇 [Audio] 正在播報中，跳過新的播報: \(content)")
             return false
         }
         
-        // 檢查是否為重複內容
+        // 檢查是否為完全相同的內容
         if let lastContent = lastAnnouncementContent,
            lastContent == content {
             if let lastTime = lastAnnouncementTime,
                now.timeIntervalSince(lastTime) < minimumAnnouncementInterval {
-                print("🔇 [Audio] 重複內容且時間間隔過短，跳過播報: \(content)")
+                print("🔇 [Audio] 重複內容且時間間隔過短（\(now.timeIntervalSince(lastTime))s），跳過播報: \(content)")
                 return false
             }
         }
         
-        // 檢查時間間隔
+        // 檢查時間間隔（任何播報之間至少間隔 3 秒）
         if let lastTime = lastAnnouncementTime,
-           now.timeIntervalSince(lastTime) < 3.0 { // 任何播報間隔至少3秒
-            print("🔇 [Audio] 播報間隔過短，跳過")
+           now.timeIntervalSince(lastTime) < 3.0 {
+            print("🔇 [Audio] 播報間隔過短（\(now.timeIntervalSince(lastTime))s），跳過")
             return false
+        }
+        
+        // 特殊檢查：目的地設定播報
+        if content.contains("目的地已設定") {
+            if let lastDestinationTime = lastDestinationSetTime,
+               now.timeIntervalSince(lastDestinationTime) < 5.0 {
+                print("🔇 [Audio] 目的地設定播報間隔過短，跳過")
+                return false
+            }
         }
         
         return true
@@ -98,19 +112,25 @@ class AudioNotificationService: NSObject, ObservableObject {
     
     // 更新播報記錄
     private func updateAnnouncementHistory(_ content: String) {
-        lastAnnouncementTime = Date()
+        let now = Date()
+        lastAnnouncementTime = now
         lastAnnouncementContent = content
         isSpeaking = true
+        
+        // 如果是目的地設定播報，記錄時間
+        if content.contains("目的地已設定") {
+            lastDestinationSetTime = now
+        }
     }
     
     // MARK: - 語音播報修復版本
     
     private func speakMessage(_ message: String, priority: SpeechPriority) {
-        // 使用專用隊列處理語音播報
+        // 使用串行隊列確保播報順序
         speechQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // 主線程檢查播報條件
+            // 在主線程檢查播報條件
             DispatchQueue.main.sync {
                 // 檢查基本條件
                 guard self.isAudioEnabled && (self.isHeadphonesConnected || self.allowSpeakerOutput()) else {
@@ -128,27 +148,32 @@ class AudioNotificationService: NSObject, ObservableObject {
                 // 根據優先級處理
                 switch priority {
                 case .urgent:
-                    // 緊急情況：停止當前播報
+                    // 緊急情況：立即停止當前播報
                     if self.speechSynthesizer.isSpeaking {
                         self.speechSynthesizer.stopSpeaking(at: .immediate)
                     }
                     self.performSpeech(message, priority: priority)
                     
                 case .high:
-                    // 高優先級：停止當前播報
+                    // 高優先級：停止當前播報後執行
                     if self.speechSynthesizer.isSpeaking {
                         self.speechSynthesizer.stopSpeaking(at: .word)
-                    }
-                    // 延遲一點確保停止完成
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        // 延遲確保停止完成
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            self.performSpeech(message, priority: priority)
+                        }
+                    } else {
                         self.performSpeech(message, priority: priority)
                     }
                     
                 case .normal:
-                    // 普通優先級：等待當前播報完成或直接播報
+                    // 普通優先級：等待或加入隊列
                     if self.speechSynthesizer.isSpeaking {
-                        self.pendingSpeechQueue.append(message)
-                        print("🎤 [Audio] 加入播報隊列: \(message)")
+                        // 檢查隊列中是否已有相同內容
+                        if !self.pendingSpeechQueue.contains(message) {
+                            self.pendingSpeechQueue.append(message)
+                            print("🎤 [Audio] 加入播報隊列: \(message)")
+                        }
                     } else {
                         self.performSpeech(message, priority: priority)
                     }
@@ -186,7 +211,6 @@ class AudioNotificationService: NSObject, ObservableObject {
     // MARK: - 站點通知修復版本
     
     func checkStationProximity(currentStops: [BusStop.Stop], nearestStopIndex: Int?) {
-        // 只在監控且音頻啟用時執行
         guard isMonitoring,
               isAudioEnabled,
               let targetStop = destinationStop,
@@ -206,7 +230,6 @@ class AudioNotificationService: NSObject, ObservableObject {
         let currentStopID = currentStop.StopID
         let proximityKey = "proximity_\(currentStopID)_\(remainingStops)"
         
-        // 檢查是否已經為這個位置通知過
         if hasRecentlyNotified(key: proximityKey) {
             return
         }
@@ -231,7 +254,7 @@ class AudioNotificationService: NSObject, ObservableObject {
     
     private func hasRecentlyNotified(key: String) -> Bool {
         if let lastTime = notificationHistory[key] {
-            return Date().timeIntervalSince(lastTime) < 30.0 // 30秒內不重複
+            return Date().timeIntervalSince(lastTime) < 30.0
         }
         return false
     }
@@ -240,7 +263,7 @@ class AudioNotificationService: NSObject, ObservableObject {
         notificationHistory[key] = Date()
         
         // 清理過期記錄
-        let cutoffTime = Date().addingTimeInterval(-300) // 5分鐘前
+        let cutoffTime = Date().addingTimeInterval(-300)
         notificationHistory = notificationHistory.filter { $0.value > cutoffTime }
     }
     
@@ -280,7 +303,6 @@ class AudioNotificationService: NSObject, ObservableObject {
     }
     
     func announceStationInfo(stopName: String, arrivalTime: String? = nil) {
-        // 避免與站點接近通知重複
         let baseMessage = "即將到達\(stopName)"
         var message = baseMessage
         
@@ -288,31 +310,43 @@ class AudioNotificationService: NSObject, ObservableObject {
             message += "，\(time)"
         }
         
-        // 使用較低優先級，避免干擾重要通知
         speakMessage(message, priority: .normal)
     }
     
     // MARK: - 目的地設定
     
     func setDestination(_ routeName: String, stopName: String) {
-        // 避免重複設定
+        // 防止重複設定
+        if isSettingDestination {
+            print("🎯 [Audio] 正在設定目的地中，跳過重複設定")
+            return
+        }
+        
+        // 檢查是否為相同目的地
         if destinationRoute == routeName && destinationStop == stopName {
             print("🎯 [Audio] 目的地未變更，跳過設定")
             return
         }
         
+        isSettingDestination = true
+        
         destinationRoute = routeName
         destinationStop = stopName
         targetStopName = stopName
-        currentDestination = "\(routeName) - \(stopName)"
+        currentDestination = routeName.isEmpty ? stopName : "\(routeName) - \(stopName)"
         
         // 重置通知狀態
         hasNotifiedApproaching = false
         hasNotifiedArrival = false
-        notificationHistory.removeAll() // 清除通知歷史
+        notificationHistory.removeAll()
         
         startMonitoring()
-        announceDestinationSet(routeName: routeName, stopName: stopName)
+        
+        // 延遲播報，避免重複
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.announceDestinationSet(routeName: routeName, stopName: stopName)
+            self.isSettingDestination = false
+        }
         
         print("🎯 [Audio] 設定目的地: \(routeName) - \(stopName)")
     }
@@ -325,6 +359,7 @@ class AudioNotificationService: NSObject, ObservableObject {
         hasNotifiedApproaching = false
         hasNotifiedArrival = false
         notificationHistory.removeAll()
+        isSettingDestination = false
         
         stopMonitoring()
         announceDestinationCleared()
@@ -332,17 +367,49 @@ class AudioNotificationService: NSObject, ObservableObject {
         print("🗑️ [Audio] 已清除目的地")
     }
     
-    // MARK: - 其他原有方法保持不變
+    // MARK: - 其他方法保持不變
     
     private func setupAudioSession() {
         do {
-            try audioSession.setCategory(.playback,
-                                       mode: .spokenAudio,
-                                       options: [.duckOthers, .allowAirPlay, .allowBluetooth])
+            // 1. 先停用當前會話
+            try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            
+            // 2. 設定音頻類別
+            try audioSession.setCategory(
+                .playback,
+                mode: .spokenAudio,
+                options: [.duckOthers, .allowBluetooth, .allowBluetoothA2DP]
+            )
+            
+            // 3. 延遲一點再啟用，避免 -50 錯誤
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                do {
+                    try self.audioSession.setActive(true)
+                    print("✅ [Audio] 音頻會話設定成功")
+                } catch let error as NSError {
+                    print("❌ [Audio] 延遲啟用音頻會話失敗: \(error.localizedDescription) (代碼: \(error.code))")
+                    
+                    // 最後嘗試最簡單的設定
+                    self.fallbackAudioSetup()
+                }
+            }
+            
+        } catch let error as NSError {
+            print("❌ [Audio] 音頻會話設定失敗: \(error.localizedDescription) (代碼: \(error.code))")
+            fallbackAudioSetup()
+        }
+    }
+    
+    // 備用音頻設定
+    private func fallbackAudioSetup() {
+        do {
+            // 使用最基本的設定
+            try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
-            print("✅ [Audio] 音頻會話設定成功")
+            print("✅ [Audio] 使用備用音頻設定成功")
         } catch {
-            print("❌ [Audio] 音頻會話設定失敗: \(error.localizedDescription)")
+            print("❌ [Audio] 備用音頻設定也失敗: \(error.localizedDescription)")
+            // 即使音頻設定失敗，也不影響其他功能
         }
     }
     
@@ -540,6 +607,7 @@ class AudioNotificationService: NSObject, ObservableObject {
         // 重置目的地通知狀態
         hasNotifiedApproaching = false
         hasNotifiedArrival = false
+        isSettingDestination = false
         
         // 停止當前播報
         if speechSynthesizer.isSpeaking {
@@ -571,7 +639,7 @@ extension AudioNotificationService: AVSpeechSynthesizerDelegate {
         isSpeaking = false
         
         // 處理待播報隊列
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             self.processNextSpeechInQueue()
         }
     }
@@ -581,17 +649,23 @@ extension AudioNotificationService: AVSpeechSynthesizerDelegate {
         isSpeaking = false
         
         // 處理待播報隊列
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.processNextSpeechInQueue()
         }
     }
     
     private func processNextSpeechInQueue() {
-        guard !pendingSpeechQueue.isEmpty, !isSpeaking else { return }
+        guard !pendingSpeechQueue.isEmpty, !isSpeaking, !speechSynthesizer.isSpeaking else {
+            return
+        }
         
         let nextMessage = pendingSpeechQueue.removeFirst()
-        print("🎤 [Audio] 播報隊列中的下一個: \(nextMessage)")
-        performSpeech(nextMessage, priority: .normal)
+        
+        // 再次檢查是否可以播報（避免過時的隊列項目）
+        if canAnnounce(nextMessage) {
+            print("🎤 [Audio] 播報隊列中的下一個: \(nextMessage)")
+            performSpeech(nextMessage, priority: .normal)
+        }
     }
 }
 

@@ -414,8 +414,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Off2Go/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要您的位置資訊來監控公車站點並提供通知服務";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要存取您的位置以監控公車站點並提供到站提醒服務";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "需要位置資訊來計算與公車站點的距離";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "需要存取您的位置以監控公車站點並提供到站提醒服務";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用於語音播報功能";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -448,8 +449,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Off2Go/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要您的位置資訊來監控公車站點並提供通知服務";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要存取您的位置以監控公車站點並提供到站提醒服務";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "需要位置資訊來計算與公車站點的距離";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "需要存取您的位置以監控公車站點並提供到站提醒服務";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用於語音播報功能";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

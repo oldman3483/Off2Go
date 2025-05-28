@@ -7,33 +7,46 @@
 
 import SwiftUI
 import CoreLocation
+import UserNotifications
+import Combine
 
 struct RouteDetailView: View {
     let route: BusRoute
     @State private var selectedDirection = 0
     @StateObject private var monitoringService = StationMonitoringService()
-    @StateObject private var locationService = LocationService.shared
+    
+    @EnvironmentObject var locationService: LocationService
+    @EnvironmentObject var audioService: AudioNotificationService
+    
     @State private var showingLocationAlert = false
     @State private var nearestStopIndex: Int?
+    @State private var showingAudioSettings = false
+    @State private var showingDestinationPicker = false
+    @State private var permissionCheckInProgress = false
+    @State private var cancellables = Set<AnyCancellable>()
+    
     
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // 路線信息卡片
+                // 路线信息卡片
                 routeInfoCard
                 
                 // 方向選擇
                 directionSelector
                 
-                // 監控狀態卡片
+                // 音频设置快速访问
+                audioControlCard
+                
+                // 监控状态卡片
                 if monitoringService.isMonitoring {
                     monitoringStatusCard
                 }
                 
-                // 站點列表
+                // 站点列表
                 stopsListView
                 
-                // 監控按鈕
+                // 监控按钮
                 monitoringButton
             }
             .padding(.horizontal, 16)
@@ -41,9 +54,36 @@ struct RouteDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showingAudioSettings = true
+                }) {
+                    Image(systemName: audioService.isAudioEnabled ? "speaker.wave.2" : "speaker.slash")
+                        .foregroundColor(audioService.isAudioEnabled ? .blue : .gray)
+                }
+            }
+        }
+        .sheet(isPresented: $showingAudioSettings) {
+            AudioSettingsView()
+        }
+        .sheet(isPresented: $showingDestinationPicker) {
+            DestinationPickerView(
+                stops: monitoringService.stops,
+                selectedStopName: Binding(
+                    get: { audioService.targetStopName ?? "" },
+                    set: { newValue in
+                        if !newValue.isEmpty {
+                            monitoringService.setDestinationStop(newValue)
+                        }
+                    }
+                )
+            )
+        }
         .onAppear {
             monitoringService.setRoute(route, direction: selectedDirection)
             updateNearestStop()
+            setupPermissionMonitoring()
         }
         .onChange(of: selectedDirection) { newDirection in
             monitoringService.setRoute(route, direction: newDirection)
@@ -52,15 +92,182 @@ struct RouteDetailView: View {
         .onChange(of: locationService.currentLocation) { _ in
             updateNearestStop()
         }
-        .alert("位置權限", isPresented: $showingLocationAlert) {
+        .alert("位置權限需求", isPresented: $showingLocationAlert) {
             Button("前往設定") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+                openAppSettings()
+            }
+            Button("重新檢查") {
+                checkPermissionStatusAndRetry()
+            }
+            Button("取消", role: .cancel) {
+                permissionCheckInProgress = false
+            }
+        } message: {
+            let (_, reason) = locationService.checkLocationServiceStatus()
+            Text("Off2Go 需要位置權限來監控您的位置並提供到站提醒。\n\n\(reason)")
+        }
+    }
+    
+    // 設置權限監聽
+    private func setupPermissionMonitoring() {
+        // 監聽位置權限變化
+        locationService.$authorizationStatus
+            .sink { status in
+                print("🔄 [RouteDetail] 位置權限狀態變化: \(locationService.authorizationStatusString)")
+                
+                // 如果權限變成可用，自動隱藏警告
+                if status == .authorizedWhenInUse || status == .authorizedAlways {
+                    showingLocationAlert = false
                 }
             }
-            Button("取消", role: .cancel) { }
-        } message: {
-            Text("需要位置權限才能監控附近站點，請在設定中開啟位置服務")
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - 音频控制卡片
+        
+    private var audioControlCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "speaker.wave.2.fill")
+                    .foregroundColor(.purple)
+                    .font(.title3)
+                
+                Text("語音提醒")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { audioService.isAudioEnabled },
+                    set: { _ in audioService.toggleAudioNotifications() }
+                ))
+                .labelsHidden()
+            }
+            
+            if audioService.isAudioEnabled {
+                VStack(spacing: 8) {
+                    // 目的地選擇
+                    HStack {
+                        Image(systemName: "flag.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                        
+                        Text("目的地:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if let targetStop = audioService.targetStopName {
+                            Text(targetStop)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("未設定")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button("選擇") {
+                            showingDestinationPicker = true
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(monitoringService.stops.isEmpty)
+                    }
+                    
+                    // 提醒距离
+                    HStack {
+                        Image(systemName: "location.circle")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                        
+                        Text("提前 \(audioService.notificationDistance) 站提醒")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        HStack(spacing: 8) {
+                            Button("-") {
+                                audioService.decreaseNotificationDistance()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(audioService.notificationDistance <= 1)
+                            
+                            Button("+") {
+                                audioService.increaseNotificationDistance()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(audioService.notificationDistance >= 5)
+                        }
+                    }
+                    
+                    // 耳机状态
+                    HStack {
+                        Image(systemName: audioService.isHeadphonesConnected ? "headphones" : "speaker.wave.2")
+                            .foregroundColor(audioService.isHeadphonesConnected ? .green : .orange)
+                            .font(.caption)
+                        
+                        Text(audioService.isHeadphonesConnected ? "耳机已连接" : "建议使用耳机")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        Button("設定") {
+                            showingAudioSettings = true
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(.top, 8)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(audioService.isAudioEnabled ? .purple.opacity(0.3) : .gray.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+    
+    // 重新檢查權限狀態
+    private func checkPermissionStatusAndRetry() {
+        print("🔄 [RouteDetail] 重新檢查權限狀態")
+        
+        // 更新權限狀態
+        locationService.updateAuthorizationStatus()
+        
+        // 延遲一下再檢查，給系統時間更新
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let (canUse, reason) = self.locationService.checkLocationServiceStatus()
+            
+            if canUse {
+                print("✅ [RouteDetail] 重新檢查成功，開始監控")
+                self.startMonitoringDirectly()
+            } else {
+                print("⚠️ [RouteDetail] 重新檢查後仍無權限: \(reason)")
+                // 保持警告顯示，讓用戶知道問題仍然存在
+            }
+        }
+    }
+        
+    // 開啟應用設定
+    private func openAppSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
         }
     }
     
@@ -241,7 +448,31 @@ struct RouteDetailView: View {
                 }
             }
             
-            if monitoringService.stops.isEmpty {
+            // 添加錯誤信息顯示
+            if let errorMessage = monitoringService.errorMessage {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.orange)
+                    
+                    Text("載入失敗")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    Button("重新載入") {
+                        monitoringService.refreshData()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else if monitoringService.isLoading {
                 // 載入中視圖
                 VStack(spacing: 16) {
                     ProgressView()
@@ -251,9 +482,38 @@ struct RouteDetailView: View {
                     Text("載入站點中...")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                    
+                    // 添加載入提示
+                    Text("路線: \(route.RouteName.Zh_tw)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
+            } else if monitoringService.stops.isEmpty {
+                // 空狀態視圖
+                VStack(spacing: 16) {
+                    Image(systemName: "mappin.slash")
+                        .font(.system(size: 30))
+                        .foregroundColor(.gray)
+                    
+                    Text("暫無站點資料")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    
+                    Text("該路線可能暫時沒有站點資訊")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    Button("重新載入") {
+                        monitoringService.setRoute(route, direction: selectedDirection)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 30)
             } else {
                 // 站點列表
                 LazyVStack(spacing: 8) {
@@ -302,18 +562,110 @@ struct RouteDetailView: View {
     
     // 切換監控狀態
     private func toggleMonitoring() {
-        if locationService.authorizationStatus != .authorizedAlways &&
-           locationService.authorizationStatus != .authorizedWhenInUse {
+        // 如果正在監控，直接停止
+        if monitoringService.isMonitoring {
+            print("🛑 [RouteDetail] 停止監控")
+            monitoringService.stopMonitoring()
+            return
+        }
+        
+        // 如果正在檢查權限，避免重複檢查
+        if permissionCheckInProgress {
+            print("⚠️ [RouteDetail] 權限檢查進行中，跳過")
+            return
+        }
+        
+        print("🔍 [RouteDetail] 開始監控前檢查...")
+        
+        // 檢查站點資料
+        guard !monitoringService.stops.isEmpty else {
+            print("❌ [RouteDetail] 無站點資料")
+            // 可以嘗試重新載入站點資料
+            monitoringService.refreshData()
+            return
+        }
+        
+        // 開始權限檢查流程
+        permissionCheckInProgress = true
+        checkPermissionsAndStartMonitoring()
+    }
+    
+    // 權限檢查和監控啟動流程
+    private func checkPermissionsAndStartMonitoring() {
+        print("🔐 [RouteDetail] 開始權限檢查流程")
+        
+        // 先更新位置服務狀態
+        locationService.updateAuthorizationStatus()
+        
+        // 檢查位置服務狀態
+        let (canUse, reason) = locationService.checkLocationServiceStatus()
+        
+        if canUse {
+            // 權限OK，直接開始監控
+            print("✅ [RouteDetail] 位置權限正常，開始監控")
+            startMonitoringDirectly()
+        } else {
+            // 權限有問題，處理不同情況
+            handleLocationPermissionIssue(reason: reason)
+        }
+    }
+        
+    // 處理位置權限問題
+    private func handleLocationPermissionIssue(reason: String) {
+        print("⚠️ [RouteDetail] 位置權限問題: \(reason)")
+        
+        switch locationService.authorizationStatus {
+        case .notDetermined:
+            // 權限未決定，請求權限
+            print("🔐 [RouteDetail] 權限未決定，請求權限")
+            requestLocationPermissionAndStart()
+            
+        case .denied, .restricted:
+            // 權限被拒絕，顯示設定提示
+            print("🚫 [RouteDetail] 權限被拒絕，顯示設定提示")
+            permissionCheckInProgress = false
+            showingLocationAlert = true
+            
+        default:
+            // 其他情況，也顯示提示
+            print("❓ [RouteDetail] 其他權限狀態: \(locationService.authorizationStatusString)")
+            permissionCheckInProgress = false
+            showingLocationAlert = true
+        }
+    }
+        
+    // 請求位置權限並開始監控
+    private func requestLocationPermissionAndStart() {
+        locationService.requestLocationPermission { success in
+            DispatchQueue.main.async {
+                self.permissionCheckInProgress = false
+                
+                if success {
+                    print("✅ [RouteDetail] 權限獲取成功")
+                    self.startMonitoringDirectly()
+                } else {
+                    print("❌ [RouteDetail] 權限獲取失敗")
+                    self.showingLocationAlert = true
+                }
+            }
+        }
+    }
+        
+    // 直接開始監控
+    private func startMonitoringDirectly() {
+        permissionCheckInProgress = false
+        
+        // 最後確認一次狀態
+        guard locationService.hasLocationPermission else {
+            print("❌ [RouteDetail] 最終權限檢查失敗")
             showingLocationAlert = true
             return
         }
         
-        if monitoringService.isMonitoring {
-            monitoringService.stopMonitoring()
-        } else {
-            monitoringService.startMonitoring()
-        }
+        print("🚀 [RouteDetail] 開始監控")
+        monitoringService.startMonitoring()
     }
+
     
     // 計算到站點的距離
     private func calculateDistance(to stop: BusStop.Stop) -> Double {

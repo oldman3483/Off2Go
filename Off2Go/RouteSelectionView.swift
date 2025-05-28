@@ -1,6 +1,6 @@
 //
 //  RouteSelectionView.swift
-//  BusNotify
+//  Off2Go
 //
 //  Created by Heidie Lee on 2025/5/15.
 //
@@ -28,19 +28,23 @@ struct RouteSelectionView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // 頂部信息卡片
-                if isFirstLoad || tdxService.isLoading {
-                    topInfoCard
-                }
-                
                 // 城市選擇器
                 cityPicker
                 
                 // 搜尋欄
                 searchBar
                 
-                // 內容區域
-                contentView
+                // 內容區域 - 使用 ZStack 來避免高度跳動
+                ZStack {
+                    // 背景色
+                    Color(.systemGroupedBackground)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                    // 內容視圖
+                    contentView
+                        .animation(.easeInOut(duration: 0.3), value: tdxService.isLoading)
+                        .animation(.easeInOut(duration: 0.3), value: routes.count)
+                }
             }
             .navigationTitle("公車路線")
             .navigationBarTitleDisplayMode(.large)
@@ -62,49 +66,7 @@ struct RouteSelectionView: View {
         }
     }
     
-    // 頂部信息卡片
-    private var topInfoCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "bus.fill")
-                    .foregroundColor(.blue)
-                    .font(.title2)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("即時公車資訊")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    
-                    if tdxService.isLoading {
-                        Text("正在載入路線資料...")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("選擇路線開始監控")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                if tdxService.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
-                        .scaleEffect(0.8)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-            )
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-    }
+
     
     // 城市選擇器
     private var cityPicker: some View {
@@ -123,21 +85,30 @@ struct RouteSelectionView: View {
                 HStack(spacing: 12) {
                     ForEach(City.allCities) { city in
                         Button(action: {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                selectedCity = city
-                            }
-                            fetchRoutes()
+                            selectCity(city)
                         }) {
                             VStack(spacing: 4) {
                                 Text(city.nameZh)
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(selectedCity.id == city.id ? .white : .primary)
                                 
-                                if !routes.isEmpty && selectedCity.id == city.id {
-                                    Text("\(routes.count) 條路線")
-                                        .font(.caption2)
-                                        .foregroundColor(.white.opacity(0.8))
+                                // 路線數量顯示，使用動畫
+                                Group {
+                                    if selectedCity.id == city.id && !routes.isEmpty {
+                                        Text("\(routes.count) 條路線")
+                                            .font(.caption2)
+                                            .foregroundColor(.white.opacity(0.8))
+                                    } else if selectedCity.id == city.id && tdxService.isLoading {
+                                        Text("載入中...")
+                                            .font(.caption2)
+                                            .foregroundColor(.white.opacity(0.8))
+                                    } else {
+                                        Text(" ")
+                                            .font(.caption2)
+                                    }
                                 }
+                                .animation(.easeInOut(duration: 0.3), value: routes.count)
+                                .animation(.easeInOut(duration: 0.3), value: tdxService.isLoading)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
@@ -145,6 +116,7 @@ struct RouteSelectionView: View {
                                 RoundedRectangle(cornerRadius: 20)
                                     .fill(selectedCity.id == city.id ?
                                           Color.blue : Color(.systemGray6))
+                                    .animation(.easeInOut(duration: 0.3), value: selectedCity.id)
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -173,6 +145,7 @@ struct RouteSelectionView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.gray)
                 }
+                .transition(.scale.combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
@@ -183,21 +156,27 @@ struct RouteSelectionView: View {
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+        .animation(.easeInOut(duration: 0.2), value: searchText.isEmpty)
     }
     
-    // 內容視圖
+    // 內容視圖 - 使用過渡動畫
     @ViewBuilder
     private var contentView: some View {
         if tdxService.isLoading && routes.isEmpty {
             loadingView
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
         } else if let errorMessage = tdxService.errorMessage, routes.isEmpty {
             errorView(errorMessage)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else if filteredRoutes.isEmpty && !searchText.isEmpty {
             emptySearchView
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
         } else if routes.isEmpty {
             emptyDataView
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
         } else {
             routeList
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
         }
     }
     
@@ -219,7 +198,6 @@ struct RouteSelectionView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
     }
     
     // 錯誤視圖
@@ -248,7 +226,6 @@ struct RouteSelectionView: View {
             .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
     }
     
     // 空搜尋結果視圖
@@ -266,7 +243,6 @@ struct RouteSelectionView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
     }
     
     // 空數據視圖
@@ -285,10 +261,9 @@ struct RouteSelectionView: View {
             .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
     }
     
-    // 路線列表
+    // 路線列表 - 添加淡入動畫
     private var routeList: some View {
         List {
             if !searchText.isEmpty && !filteredRoutes.isEmpty {
@@ -300,7 +275,7 @@ struct RouteSelectionView: View {
                 }
             }
             
-            ForEach(filteredRoutes) { route in
+            ForEach(Array(filteredRoutes.enumerated()), id: \.element.id) { index, route in
                 NavigationLink(destination: RouteDetailView(route: route)) {
                     RouteRowView(
                         route: route,
@@ -315,23 +290,51 @@ struct RouteSelectionView: View {
                         .fill(.regularMaterial)
                         .padding(.vertical, 2)
                 )
+                // 交錯動畫效果
+                .opacity(tdxService.isLoading ? 0.3 : 1.0)
+                .animation(.easeInOut(duration: 0.3).delay(Double(index) * 0.05), value: tdxService.isLoading)
             }
         }
         .listStyle(PlainListStyle())
-        .background(Color(.systemGroupedBackground))
     }
     
-    // 獲取路線數據
+    // 城市選擇方法 - 添加動畫
+    private func selectCity(_ city: City) {
+        guard selectedCity.id != city.id else { return }
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            selectedCity = city
+        }
+        
+        // 延遲一點再獲取數據，讓動畫更流暢
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            fetchRoutes()
+        }
+    }
+    
+    // 獲取路線數據 - 添加平滑過渡
     private func fetchRoutes() {
         isFirstLoad = false
-        routes = []
+        
+        // 如果不是第一次載入，不要立即清空列表
+        if !routes.isEmpty {
+            // 漸變隱藏當前列表
+            withAnimation(.easeInOut(duration: 0.2)) {
+                // 保持列表，但添加載入狀態
+            }
+        } else {
+            routes = []
+        }
         
         tdxService.getAllRoutes(city: selectedCity.id) { fetchedRoutes, error in
             DispatchQueue.main.async {
-                if let routes = fetchedRoutes {
-                    self.routes = routes
-                } else if error != nil {
-                    self.showingAlert = true
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    if let routes = fetchedRoutes {
+                        self.routes = routes
+                    } else if error != nil {
+                        self.routes = []
+                        self.showingAlert = true
+                    }
                 }
             }
         }
@@ -356,10 +359,12 @@ struct RouteSelectionView: View {
     
     // 切換收藏狀態
     private func toggleFavorite(_ route: BusRoute) {
-        if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
-            favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
-        } else {
-            favoriteRoutes.append(route)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
+                favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
+            } else {
+                favoriteRoutes.append(route)
+            }
         }
         
         if let encoded = try? JSONEncoder().encode(favoriteRoutes) {
@@ -368,7 +373,7 @@ struct RouteSelectionView: View {
     }
 }
 
-// 路線行視圖
+// 路線行視圖 - 保持不變
 struct RouteRowView: View {
     let route: BusRoute
     let isFavorite: Bool
@@ -424,8 +429,4 @@ struct RouteRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
     }
-}
-
-#Preview {
-    RouteSelectionView()
 }

@@ -1,17 +1,20 @@
 //
 //  ContentView.swift
-//  BusNotify
+//  Off2Go
 //
-//  Created by Heidie Lee on 2025/5/15.
+//  Modified by Heidie Lee on 2025/5/15.
 //
 
 import SwiftUI
+import UserNotifications
+import Combine
 
 struct ContentView: View {
     @State private var selectedTab = 0
     @EnvironmentObject var locationService: LocationService
     @StateObject private var monitoringService = StationMonitoringService()
     @State private var showingPermissionAlert = false
+    @State private var cancellables = Set<AnyCancellable>()
     
     var body: some View {
         ZStack {
@@ -63,46 +66,105 @@ struct ContentView: View {
         }
         .onAppear {
             setupInitialState()
+            setupPermissionMonitoring()
         }
-        .alert("權限需求", isPresented: $showingPermissionAlert) {
+        .alert("權限設定", isPresented: $showingPermissionAlert) {
             Button("前往設定") {
                 openAppSettings()
             }
-            Button("稍後", role: .cancel) { }
+            Button("稍後設定", role: .cancel) {
+                // 用戶選擇稍後設定，記錄這個選擇
+                print("ℹ️ [ContentView] 用戶選擇稍後設定權限")
+            }
         } message: {
-            Text("BusNotify 需要位置和通知權限才能正常運作，請在設定中開啟相關權限。")
+            let (canUse, reason) = locationService.checkLocationServiceStatus()
+            
+            if !canUse {
+                Text("Off2Go 需要位置權限才能提供到站提醒功能。\n\n\(reason)")
+            } else {
+                Text("建議開啟通知權限以接收到站提醒。")
+            }
         }
     }
     
     // 設置初始狀態
     private func setupInitialState() {
-        // 檢查權限
-        checkPermissions()
-        
         // 設置外觀
         setupAppearance()
+        
+        // 延遲檢查權限，確保視圖已完全載入
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.checkPermissions()
+        }
     }
     
-    // 檢查權限
+    // 設置權限監聽
+    private func setupPermissionMonitoring() {
+        // 監聽位置權限變化
+        locationService.$authorizationStatus
+            .sink { status in
+                print("🔄 [ContentView] 位置權限狀態變化: \(locationService.authorizationStatusString)")
+                
+                // 如果權限從拒絕變成允許，自動隱藏警告
+                if status == .authorizedWhenInUse || status == .authorizedAlways {
+                    showingPermissionAlert = false
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    // 檢查權限 - 修復版本
     private func checkPermissions() {
+        print("🔍 [ContentView] 開始檢查應用權限...")
+        
         // 檢查位置權限
-        if locationService.authorizationStatus == .notDetermined {
-            locationService.requestLocationPermission()
-        }
+        locationService.updateAuthorizationStatus()
+        let (canUse, reason) = locationService.checkLocationServiceStatus()
+        
+        print("📍 [ContentView] 位置服務狀態: \(canUse ? "正常" : "異常") - \(reason)")
         
         // 檢查通知權限
         UNUserNotificationCenter.current().getNotificationSettings { settings in
-            if settings.authorizationStatus == .notDetermined {
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+            DispatchQueue.main.async {
+                let notificationStatus = settings.authorizationStatus
+                print("🔔 [ContentView] 通知權限狀態: \(self.notificationStatusString(status: notificationStatus))")
+                
+                // 如果通知權限未決定，請求權限
+                if notificationStatus == .notDetermined {
+                    self.requestNotificationPermission()
+                }
+                
+                // 只有在位置權限明確被拒絕時才顯示提示
+                if self.locationService.authorizationStatus == .denied {
+                    print("⚠️ [ContentView] 位置權限被拒絕，顯示提示")
+                    self.showingPermissionAlert = true
+                }
             }
         }
-        
-        // 如果權限被拒絕，顯示提示
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if locationService.authorizationStatus == .denied ||
-               locationService.authorizationStatus == .restricted {
-                showingPermissionAlert = true
+    }
+    
+    // 請求通知權限
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ [ContentView] 通知權限請求失敗: \(error.localizedDescription)")
+                } else {
+                    print("\(granted ? "✅" : "❌") [ContentView] 通知權限請求\(granted ? "成功" : "被拒絕")")
+                }
             }
+        }
+    }
+    
+    // 通知狀態字串描述
+    private func notificationStatusString(status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "未決定"
+        case .denied: return "已拒絕"
+        case .authorized: return "已授權"
+        case .provisional: return "臨時授權"
+        case .ephemeral: return "短暫授權"
+        @unknown default: return "未知狀態"
         }
     }
     

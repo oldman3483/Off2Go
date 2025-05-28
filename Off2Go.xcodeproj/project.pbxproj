@@ -29,9 +29,22 @@
 		48B997BB2DE5BCE300D389AD /* Off2GoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Off2GoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		48A083872DE5D2EA007591D4 /* Exceptions for "Off2Go" folder in "Off2Go" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 48B997A02DE5BCE200D389AD /* Off2Go */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		48B997A32DE5BCE200D389AD /* Off2Go */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				48A083872DE5D2EA007591D4 /* Exceptions for "Off2Go" folder in "Off2Go" target */,
+			);
 			path = Off2Go;
 			sourceTree = "<group>";
 		};
@@ -399,6 +412,11 @@
 				DEVELOPMENT_TEAM = 6QV8Z29535;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Off2Go/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要您的位置資訊來監控公車站點並提供通知服務";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "需要位置資訊來計算與公車站點的距離";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用於語音播報功能";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +446,11 @@
 				DEVELOPMENT_TEAM = 6QV8Z29535;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Off2Go/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "需要您的位置資訊來監控公車站點並提供通知服務";
+				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "需要位置資訊來計算與公車站點的距離";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用於語音播報功能";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

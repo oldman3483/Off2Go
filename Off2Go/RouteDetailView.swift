@@ -47,7 +47,7 @@ struct RouteDetailView: View {
                     Button(action: {
                         showingAudioSettings = true
                     }) {
-                        Label("音頻設定", systemImage: "speaker.wave.2")
+                        Label("語音設定", systemImage: "speaker.wave.2")
                     }
                     
                     if selectedDestinationIndex != nil {
@@ -58,8 +58,16 @@ struct RouteDetailView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(.blue)
+                    HStack(spacing: 4) {
+                        if audioService.isAudioEnabled && selectedDestinationIndex != nil {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                        }
+                        
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundColor(.blue)
+                    }
                 }
             }
         }
@@ -240,13 +248,26 @@ struct RouteDetailView: View {
                 Spacer()
                 
                 if selectedDestinationIndex != nil {
-                    // 提醒開關
-                    Toggle("", isOn: Binding(
-                        get: { audioService.isAudioEnabled },
-                        set: { _ in audioService.toggleAudioNotifications() }
-                    ))
-                    .labelsHidden()
-                    .scaleEffect(0.8)
+                    // 語音提醒狀態指示器
+                    HStack(spacing: 4) {
+                        if audioService.isAudioEnabled {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            Text("語音")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                        }
+                        
+                        // 提醒開關
+                        Toggle("", isOn: Binding(
+                            get: { audioService.isAudioEnabled },
+                            set: { _ in audioService.toggleAudioNotifications() }
+                        ))
+                        .labelsHidden()
+                        .scaleEffect(0.8)
+                    }
                 }
             }
             
@@ -267,16 +288,51 @@ struct RouteDetailView: View {
                         Spacer()
                     }
                     
-                    HStack {
-                        Image(systemName: "clock.fill")
-                            .foregroundColor(.orange)
-                            .font(.caption)
-                        
-                        Text("將在接近時自動提醒您")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
+                    // 語音提醒狀態顯示
+                    if audioService.isAudioEnabled {
+                        HStack {
+                            Image(systemName: "speaker.wave.3.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            
+                            Text("🎧 語音提醒已開啟，將在接近時播報")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                                .fontWeight(.medium)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.blue.opacity(0.1))
+                        )
+                    } else {
+                        HStack {
+                            Image(systemName: "speaker.slash.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            
+                            Text("語音提醒已關閉")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            
+                            Spacer()
+                            
+                            Button("開啟") {
+                                audioService.toggleAudioNotifications()
+                            }
+                            .font(.caption2)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.orange.opacity(0.1))
+                        )
                     }
                     
                     // 距離狀態顯示
@@ -303,9 +359,23 @@ struct RouteDetailView: View {
                         .foregroundColor(.blue)
                         .font(.caption)
                     
-                    Text("點擊下方站點設定目的地，即可自動獲得到站提醒")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("點擊下方站點設定目的地，即可自動獲得到站提醒")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        if audioService.isAudioEnabled {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption2)
+                                
+                                Text("語音提醒已準備就緒")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                    }
                     
                     Spacer()
                 }
@@ -554,6 +624,9 @@ struct SimpleStopRowView: View {
     let distance: Double?
     let onTap: () -> Void
     
+    // 添加語音服務狀態
+    @EnvironmentObject var audioService: AudioNotificationService
+    
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -564,7 +637,7 @@ struct SimpleStopRowView: View {
                         .frame(width: 32, height: 32)
                     
                     if isDestination {
-                        Image(systemName: "bell.fill")
+                        Image(systemName: audioService.isAudioEnabled ? "speaker.wave.2.fill" : "bell.fill")
                             .font(.caption)
                             .foregroundColor(.white)
                     } else {
@@ -576,30 +649,42 @@ struct SimpleStopRowView: View {
                 }
                 
                 // 站點資訊
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(stop.StopName.Zh_tw)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        if isDestination {
-                            Text("目的地")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(.green))
-                                .foregroundColor(.white)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    // 站點名稱
+                    Text(stop.StopName.Zh_tw)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
                     
-//                    HStack {
-//                        // 站牌序號
-//                        Text("站牌: \(stop.StopSequence)")
-//                            .font(.caption)
-//                            .foregroundColor(.secondary)
+                    // 標籤區域 - 改為垂直排列
+                    VStack(alignment: .leading, spacing: 4) {
+                        // 目的地標籤
+                        if isDestination {
+                            HStack(spacing: 6) {
+                                Text("目的地")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(.green))
+                                    .foregroundColor(.white)
+                                
+                                // 在同一行顯示語音狀態
+                                if audioService.isAudioEnabled {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "speaker.wave.2.fill")
+                                            .font(.caption2)
+                                        Text("語音")
+                                            .font(.caption2)
+                                    }
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(.blue.opacity(0.2)))
+                                }
+                            }
+                        }
                         
                         // 到站時間
                         if let arrival = arrival {
@@ -607,13 +692,13 @@ struct SimpleStopRowView: View {
                                 .font(.caption)
                                 .foregroundColor(.blue)
                         }
-//                    }
+                    }
                 }
                 
                 Spacer()
                 
-                // 距離和動作提示
-                VStack(alignment: .trailing, spacing: 4) {
+                // 右側資訊 - 改為垂直排列
+                VStack(alignment: .trailing, spacing: 6) {
                     // 距離顯示
                     if let distance = distance {
                         Text(formatDistance(distance))
@@ -622,10 +707,27 @@ struct SimpleStopRowView: View {
                             .foregroundColor(distanceColor(distance))
                     }
                     
-                    // 動作提示
-                    Text(isDestination ? "取消提醒" : "設為目的地")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    // 動作提示 - 簡化文字
+                    if isDestination {
+                        if audioService.isAudioEnabled {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("🎧 提醒中")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                                Text("點擊取消")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            Text("取消提醒")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Text("設為目的地")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             .padding(.vertical, 12)
@@ -750,15 +852,4 @@ struct FavoriteButton: View {
             favoriteRoutesData = encoded
         }
     }
-}
-
-#Preview {
-    RouteDetailView(route: BusRoute(
-        RouteID: "307",
-        RouteName: BusRoute.RouteName(Zh_tw: "307", En: "307"),
-        DepartureStopNameZh: "撫遠街",
-        DestinationStopNameZh: "板橋車站"
-    ))
-    .environmentObject(LocationService.shared)
-    .environmentObject(AudioNotificationService.shared)
 }

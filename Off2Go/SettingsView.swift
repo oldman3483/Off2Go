@@ -695,7 +695,3 @@ struct InfoRow: View {
         }
     }
 }
-
-#Preview {
-    SettingsView()
-}

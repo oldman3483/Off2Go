@@ -346,6 +346,3 @@ struct FavoriteRouteRowView: View {
     }
 }
 
-#Preview {
-    FavoritesView()
-}

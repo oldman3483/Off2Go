@@ -194,6 +194,9 @@ class AudioNotificationService: NSObject, ObservableObject {
     func clearDestination() {
         print("🗑️ [Audio] 清除目的地")
         
+        // 檢查是否真的有目的地需要清除
+        let hadDestination = destinationRoute != nil || destinationStop != nil
+        
         destinationRoute = nil
         destinationStop = nil
         targetStopName = nil
@@ -204,9 +207,14 @@ class AudioNotificationService: NSObject, ObservableObject {
         // 停止位置追蹤
         stopLocationTracking()
         
-        // 語音提醒
-        let message = "目的地已取消"
-        speakMessage(message, priority: .normal)
+        // 只有在真的有目的地時才語音提醒
+        if hadDestination {
+            let message = "目的地已取消"
+            speakMessage(message, priority: .normal)
+            print("🔊 [Audio] 播報目的地取消訊息")
+        } else {
+            print("ℹ️ [Audio] 沒有目的地需要取消，跳過語音播報")
+        }
         
         // 更新媒體控制中心
         updateNowPlayingInfo(with: "待機中")
@@ -318,11 +326,6 @@ class AudioNotificationService: NSObject, ObservableObject {
         speakMessage(message, priority: .urgent)
         playNotificationSound()
         updateNowPlayingInfo(with: "已到達")
-        
-        // 延遲自動清除目的地
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
-            self.clearDestination()
-        }
         
         print("🎯 [Audio] 已到達目的地提醒")
     }

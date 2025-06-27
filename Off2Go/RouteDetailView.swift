@@ -69,6 +69,12 @@ struct RouteDetailView: View {
         .onAppear {
             stationService.setRoute(route, direction: selectedDirection)
         }
+        .onAppear {
+            stationService.setRoute(route, direction: selectedDirection)
+            
+            // 同步檢查目的地狀態
+            syncDestinationState()
+        }
         .onChange(of: selectedDirection) { newDirection in
             // 只有當路線已載入且方向真的改變時才處理
             if !stationService.stops.isEmpty {
@@ -80,6 +86,28 @@ struct RouteDetailView: View {
             // 當位置更新時，檢查是否接近目的地
             if let location = location, selectedDestinationIndex != nil {
                 audioService.checkDestinationProximity(currentStops: stationService.stops, userLocation: location)
+            }
+        }
+    }
+    
+    private func syncDestinationState() {
+        // 檢查 AudioService 和 UI 狀態是否同步
+        let hasAudioDestination = audioService.currentDestination != nil
+        let hasUIDestination = selectedDestinationIndex != nil
+        
+        print("🔄 [RouteDetail] === 同步目的地狀態 ===")
+        print("   Audio 有目的地: \(hasAudioDestination)")
+        print("   UI 有目的地: \(hasUIDestination)")
+        
+        if hasAudioDestination != hasUIDestination {
+            print("⚠️ [RouteDetail] 狀態不同步，進行修正")
+            
+            if hasAudioDestination && !hasUIDestination {
+                // Audio 有但 UI 沒有，清除 Audio
+                audioService.clearDestination()
+            } else if !hasAudioDestination && hasUIDestination {
+                // UI 有但 Audio 沒有，清除 UI
+                selectedDestinationIndex = nil
             }
         }
     }
@@ -386,14 +414,25 @@ struct RouteDetailView: View {
     }
     
     private func clearDestination() {
+        print("🗑️ [RouteDetail] === 開始清除目的地 ===")
+        print("   當前UI狀態 - selectedDestinationIndex: \(selectedDestinationIndex ?? -1)")
+        print("   當前Audio狀態 - currentDestination: \(audioService.currentDestination ?? "無")")
+        
         withAnimation(.easeInOut(duration: 0.3)) {
             selectedDestinationIndex = nil
         }
         
-        audioService.clearDestination()
+        // 先檢查 audioService 是否真的有目的地
+        if audioService.currentDestination != nil {
+            print("🔊 [RouteDetail] AudioService 有目的地，執行清除")
+            audioService.clearDestination()
+        } else {
+            print("ℹ️ [RouteDetail] AudioService 沒有目的地，跳過清除")
+        }
+        
         locationService.stopUpdatingLocation()
         
-        print("🗑️ [RouteDetail] 已清除目的地並停止追蹤")
+        print("✅ [RouteDetail] 目的地清除完成")
     }
     
     private func requestLocationPermission() {

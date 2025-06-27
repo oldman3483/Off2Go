@@ -15,6 +15,8 @@ struct BusRoute: Codable, Identifiable, Hashable {
     let DepartureStopNameZh: String?
     let DestinationStopNameZh: String?
     
+    var city: String?
+    
     var id: String { RouteID }
     
     func hash(into hasher: inout Hasher) {

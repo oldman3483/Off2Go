@@ -1,39 +1,25 @@
 //
-//  RouteDetailView.swift
+//  RouteDetailView.swift - 完整簡化版本
 //  Off2Go
 //
-//  Created by Heidie Lee on 2025/5/15.
-//  Improved version with better UX
+//  移除監控概念，專注於目的地設定和自動提醒
 //
 
 import SwiftUI
 import CoreLocation
-import UserNotifications
 import Combine
 
 struct RouteDetailView: View {
     let route: BusRoute
     @State private var selectedDirection = 0
-    @StateObject private var monitoringService = StationMonitoringService()
+    @StateObject private var stationService = StationService() // 重新命名，移除監控概念
     
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var audioService: AudioNotificationService
     
-    @State private var showingLocationAlert = false
-    @State private var nearestStopIndex: Int?
-    @State private var showingAudioSettings = false
-    @State private var permissionCheckInProgress = false
-    @State private var cancellables = Set<AnyCancellable>()
-    
-    @State private var selectedStopForAction: BusStop.Stop?
-    @State private var showingStopActionSheet = false
-    
-    // 新增：目的地設定狀態
     @State private var selectedDestinationIndex: Int?
-    @State private var showingDestinationHint = false
-    
-    // 權限狀態追蹤
-    @State private var lastPermissionCheck: Date?
+    @State private var showingAudioSettings = false
+    @State private var cancellables = Set<AnyCancellable>()
     
     var body: some View {
         ScrollView {
@@ -41,22 +27,14 @@ struct RouteDetailView: View {
                 // 路線信息卡片
                 routeInfoCard
                 
-                // 簡化的方向選擇 - 更直覺的設計
+                // 方向選擇卡片
                 directionSelectorCard
                 
                 // 目的地設定狀態卡片
                 destinationStatusCard
                 
-                // 監控狀態卡片
-                if monitoringService.isMonitoring {
-                    monitoringStatusCard
-                }
-                
-                // 站點列表 - 可直接點選設定目的地
+                // 站點列表
                 stopsListView
-                
-                // 監控按鈕
-                monitoringButton
             }
             .padding(.horizontal, 16)
         }
@@ -89,394 +67,25 @@ struct RouteDetailView: View {
             AudioSettingsView()
         }
         .onAppear {
-            monitoringService.setRoute(route, direction: selectedDirection)
-            updateNearestStop()
-            setupPermissionMonitoring()
-            
-            // 顯示提示
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                if selectedDestinationIndex == nil && !monitoringService.stops.isEmpty {
-                    showingDestinationHint = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        showingDestinationHint = false
-                    }
-                }
-            }
+            stationService.setRoute(route, direction: selectedDirection)
         }
         .onChange(of: selectedDirection) { newDirection in
-            monitoringService.setRoute(route, direction: newDirection)
-            selectedDestinationIndex = nil // 重置目的地
-            audioService.clearDestination()
-            updateNearestStop()
-        }
-        .onChange(of: locationService.currentLocation) { _ in
-            updateNearestStop()
-        }
-        .alert("位置權限需求", isPresented: $showingLocationAlert) {
-            Button("前往設定") {
-                openAppSettings()
+            // 只有當路線已載入且方向真的改變時才處理
+            if !stationService.stops.isEmpty {
+                print("🔄 [RouteDetail] 方向切換: \(selectedDirection) -> \(newDirection)")
+                stationService.setRoute(route, direction: newDirection)
             }
-            Button("重新檢查") {
-                checkPermissionStatusAndRetry()
-            }
-            Button("取消", role: .cancel) {
-                permissionCheckInProgress = false
-            }
-        } message: {
-            let (_, reason) = locationService.checkLocationServiceStatus()
-            Text("Off2Go 需要位置權限來監控您的位置並提供到站提醒。\n\n\(reason)")
         }
-        .sheet(isPresented: $showingStopActionSheet) {
-            if let stop = selectedStopForAction,
-               let index = monitoringService.stops.firstIndex(where: { $0.StopID == stop.StopID }) {
-                StopActionSheet(
-                    stop: stop,
-                    index: index,
-                    route: route,
-                    isCurrentDestination: selectedDestinationIndex == index
-                ) { action in
-                    handleStopAction(action, for: stop, at: index)
-                    showingStopActionSheet = false
-                }
-                .presentationDetents([.height(300), .medium])
-                .presentationDragIndicator(.visible)
+        .onChange(of: locationService.currentLocation) { location in
+            // 當位置更新時，檢查是否接近目的地
+            if let location = location, selectedDestinationIndex != nil {
+                audioService.checkDestinationProximity(currentStops: stationService.stops, userLocation: location)
             }
         }
     }
     
-    // MARK: - 新設計的方向選擇卡片
+    // MARK: - 路線信息卡片
     
-    private var directionSelectorCard: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Image(systemName: "arrow.left.arrow.right.circle")
-                    .foregroundColor(.blue)
-                    .font(.title3)
-                
-                Text("選擇行駛方向")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-            }
-            
-            // 更直覺的方向選擇
-            HStack(spacing: 12) {
-                // 去程
-                DirectionButton(
-                    title: "去程",
-                    subtitle: route.DestinationStopNameZh ?? "往終點",
-                    isSelected: selectedDirection == 0,
-                    icon: "arrow.right.circle.fill"
-                ) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        selectedDirection = 0
-                    }
-                }
-                
-                // 回程
-                DirectionButton(
-                    title: "回程",
-                    subtitle: route.DepartureStopNameZh ?? "往起點",
-                    isSelected: selectedDirection == 1,
-                    icon: "arrow.left.circle.fill"
-                ) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        selectedDirection = 1
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
-        )
-    }
-    
-    // MARK: 處理動作的方法
-    private func handleStopAction(_ action: StopAction, for stop: BusStop.Stop, at index: Int) {
-        switch action {
-        case .setAsDestination:
-            setDestination(index: index)
-        case .clearDestination:
-            clearDestination()
-        case .viewOtherRoutes:
-            // TODO: 顯示該站牌的其他路線
-            print("🚌 查看 \(stop.StopName.Zh_tw) 的其他路線")
-        case .cancel:
-            break
-        }
-    }
-    
-    // MARK: - 目的地狀態卡片
-    
-    private var destinationStatusCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "flag.circle.fill")
-                    .foregroundColor(selectedDestinationIndex != nil ? .green : .orange)
-                    .font(.title3)
-                
-                Text("目的地設定")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                if selectedDestinationIndex != nil {
-                    Toggle("語音提醒", isOn: Binding(
-                        get: { audioService.isAudioEnabled },
-                        set: { _ in audioService.toggleAudioNotifications() }
-                    ))
-                    .labelsHidden()
-                    .scaleEffect(0.8)
-                }
-            }
-            
-            if let destinationIndex = selectedDestinationIndex,
-               destinationIndex < monitoringService.stops.count {
-                let destinationStop = monitoringService.stops[destinationIndex]
-                
-                HStack {
-                    Text(destinationStop.StopName.Zh_tw)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    Spacer()
-                    
-                    Text("提前 \(audioService.notificationDistance) 站提醒")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-            } else {
-                Text("點擊下方站點設定目的地")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(selectedDestinationIndex != nil ? .green.opacity(0.1) : .orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            selectedDestinationIndex != nil ? .green.opacity(0.3) : .orange.opacity(0.3),
-                            lineWidth: 1
-                        )
-                )
-        )
-    }
-    
-    // MARK: - 改進的站點列表（可直接點選設定目的地）
-    
-    private var stopsListView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "list.bullet.circle")
-                    .foregroundColor(.purple)
-                
-                Text("站點列表")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                if !monitoringService.stops.isEmpty {
-                    Text("\(monitoringService.stops.count) 站")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(.purple.opacity(0.2)))
-                        .foregroundColor(.purple)
-                }
-            }
-            
-            if let errorMessage = monitoringService.errorMessage {
-                errorView(errorMessage)
-            } else if monitoringService.isLoading {
-                loadingView
-            } else if monitoringService.stops.isEmpty {
-                emptyStopsView
-            } else {
-                LazyVStack(spacing: 4) {
-                    ForEach(Array(zip(monitoringService.stops.indices, monitoringService.stops)), id: \.0) { index, stop in
-                        StopRowView(
-                            stop: stop,
-                            index: index,
-                            arrival: monitoringService.arrivals[stop.StopID],
-                            distance: calculateDistance(to: stop),
-                            isNearest: nearestStopIndex == index,
-                            isDestination: selectedDestinationIndex == index,
-                            isMonitoring: monitoringService.isMonitoring
-                        ) {
-                            // 點擊顯示動作選單
-                            selectedStopForAction = stop
-                            showingStopActionSheet = true
-                        }
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
-        )
-    }
-    
-    // MARK: - 目的地設定相關方法
-    
-    private func setDestination(index: Int) {
-        guard index < monitoringService.stops.count else { return }
-        
-        let stop = monitoringService.stops[index]
-        
-        withAnimation(.easeInOut(duration: 0.3)) {
-            selectedDestinationIndex = index
-        }
-        
-        // 設定音頻服務目的地
-        audioService.setDestination(route.RouteName.Zh_tw, stopName: stop.StopName.Zh_tw)
-        monitoringService.setDestinationStop(stop.StopName.Zh_tw)
-        
-        // 隱藏提示
-        showingDestinationHint = false
-        
-        print("🎯 [RouteDetail] 設定目的地: \(stop.StopName.Zh_tw) (索引: \(index))")
-    }
-    
-    private func clearDestination() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            selectedDestinationIndex = nil
-        }
-        
-        audioService.clearDestination()
-        monitoringService.clearDestinationStop()
-        
-        print("🗑️ [RouteDetail] 已清除目的地")
-    }
-    
-    // MARK: - 支援元件和方法（其他部分保持不變，只列出關鍵修改）
-    
-    // 監控狀態卡片保持不變...
-    private var monitoringStatusCard: some View {
-        VStack(spacing: 12) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "location.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title2)
-                    
-                    Text("監控中")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.green)
-                }
-                
-                Spacer()
-                
-                Text("共 \(monitoringService.stops.count) 個站點")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(.green.opacity(0.2)))
-                    .foregroundColor(.green)
-            }
-            
-            if let nearestIndex = nearestStopIndex,
-               nearestIndex < monitoringService.stops.count {
-                let nearestStop = monitoringService.stops[nearestIndex]
-                let distance = calculateDistance(to: nearestStop)
-                
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("最近站點")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(nearestStop.StopName.Zh_tw)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("距離")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(Int(distance)) 公尺")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(distance < 100 ? .red : .primary)
-                    }
-                }
-                .padding(.top, 8)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.green.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(.green.opacity(0.3), lineWidth: 1)
-                )
-        )
-    }
-    
-    // 其他方法保持不變...
-    private func setupPermissionMonitoring() {
-        locationService.$authorizationStatus
-            .removeDuplicates()
-            .sink { status in
-                print("🔄 [RouteDetail] 位置權限狀態變化: \(locationService.authorizationStatusString)")
-                
-                if status == .authorizedWhenInUse || status == .authorizedAlways {
-                    showingLocationAlert = false
-                    permissionCheckInProgress = false
-                }
-            }
-            .store(in: &cancellables)
-    }
-    
-    private func calculateDistance(to stop: BusStop.Stop) -> Double {
-        guard let userLocation = locationService.currentLocation else {
-            return Double.infinity
-        }
-        
-        let stopLocation = CLLocation(
-            latitude: stop.StopPosition.PositionLat,
-            longitude: stop.StopPosition.PositionLon
-        )
-        
-        return userLocation.distance(from: stopLocation)
-    }
-    
-    private func updateNearestStop() {
-        guard !monitoringService.stops.isEmpty,
-              let userLocation = locationService.currentLocation else {
-            nearestStopIndex = nil
-            return
-        }
-        
-        var minDistance = Double.infinity
-        var minIndex: Int?
-        
-        for (index, stop) in monitoringService.stops.enumerated() {
-            let distance = calculateDistance(to: stop)
-            if distance < minDistance {
-                minDistance = distance
-                minIndex = index
-            }
-        }
-        
-        nearestStopIndex = minIndex
-    }
-    
-    // 路線信息卡片保持不變...
     private var routeInfoCard: some View {
         VStack(spacing: 12) {
             HStack {
@@ -540,36 +149,293 @@ struct RouteDetailView: View {
         )
     }
     
-    // 監控按鈕保持不變...
-    private var monitoringButton: some View {
-        Button(action: toggleMonitoring) {
-            HStack(spacing: 12) {
-                if permissionCheckInProgress {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
-                } else {
-                    Image(systemName: monitoringService.isMonitoring ? "stop.circle.fill" : "play.circle.fill")
-                        .font(.title2)
-                }
+    // MARK: - 方向選擇卡片
+    
+    private var directionSelectorCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Image(systemName: "arrow.left.arrow.right.circle")
+                    .foregroundColor(.blue)
+                    .font(.title3)
                 
-                Text(permissionCheckInProgress ? "檢查權限中..." : (monitoringService.isMonitoring ? "停止監控" : "開始監控"))
+                Text("選擇行駛方向")
                     .font(.headline)
                     .fontWeight(.semibold)
+                
+                Spacer()
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(permissionCheckInProgress ? .gray : (monitoringService.isMonitoring ? .red : .blue))
-            )
-            .foregroundColor(.white)
+            
+            HStack(spacing: 12) {
+                DirectionButton(
+                    title: "去程",
+                    subtitle: route.DestinationStopNameZh ?? "往終點",
+                    isSelected: selectedDirection == 0,
+                    icon: "arrow.right.circle.fill"
+                ) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        selectedDirection = 0
+                    }
+                }
+                
+                DirectionButton(
+                    title: "回程",
+                    subtitle: route.DepartureStopNameZh ?? "往起點",
+                    isSelected: selectedDirection == 1,
+                    icon: "arrow.left.circle.fill"
+                ) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        selectedDirection = 1
+                    }
+                }
+            }
         }
-        .buttonStyle(PlainButtonStyle())
-        .disabled(monitoringService.stops.isEmpty || permissionCheckInProgress)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+        )
     }
     
-    // 錯誤視圖
+    // MARK: - 目的地狀態卡片
+    
+    private var destinationStatusCard: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "bell.circle.fill")
+                    .foregroundColor(selectedDestinationIndex != nil ? .green : .gray)
+                    .font(.title3)
+                
+                Text("到站提醒")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if selectedDestinationIndex != nil {
+                    // 提醒開關
+                    Toggle("", isOn: Binding(
+                        get: { audioService.isAudioEnabled },
+                        set: { _ in audioService.toggleAudioNotifications() }
+                    ))
+                    .labelsHidden()
+                    .scaleEffect(0.8)
+                }
+            }
+            
+            if let destinationIndex = selectedDestinationIndex,
+               destinationIndex < stationService.stops.count {
+                let destinationStop = stationService.stops[destinationIndex]
+                
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "location.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                        
+                        Text("目的地：\(destinationStop.StopName.Zh_tw)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                    }
+                    
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                        
+                        Text("將在接近時自動提醒您")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                    }
+                    
+                    // 距離狀態顯示
+                    if let userLocation = locationService.currentLocation {
+                        let distance = calculateDistance(to: destinationStop, from: userLocation)
+                        
+                        HStack {
+                            Image(systemName: "ruler")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            
+                            Text("目前距離：\(formatDistance(distance))")
+                                .font(.caption)
+                                .foregroundColor(distance < 500 ? .orange : .secondary)
+                            
+                            Spacer()
+                        }
+                    }
+                }
+                
+            } else {
+                HStack {
+                    Image(systemName: "hand.point.down.fill")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                    
+                    Text("點擊下方站點設定目的地，即可自動獲得到站提醒")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(selectedDestinationIndex != nil ? .green.opacity(0.1) : .gray.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            selectedDestinationIndex != nil ? .green.opacity(0.3) : .gray.opacity(0.3),
+                            lineWidth: 1
+                        )
+                )
+        )
+    }
+    
+    // MARK: - 站點列表
+    
+    private var stopsListView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "list.bullet.circle")
+                    .foregroundColor(.purple)
+                
+                Text("站點列表")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if !stationService.stops.isEmpty {
+                    Text("\(stationService.stops.count) 站")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(.purple.opacity(0.2)))
+                        .foregroundColor(.purple)
+                }
+            }
+            
+            if let errorMessage = stationService.errorMessage {
+                errorView(errorMessage)
+            } else if stationService.isLoading {
+                loadingView
+            } else if stationService.stops.isEmpty {
+                emptyStopsView
+            } else {
+                LazyVStack(spacing: 4) {
+                    ForEach(Array(zip(stationService.stops.indices, stationService.stops)), id: \.0) { index, stop in
+                        SimpleStopRowView(
+                            stop: stop,
+                            index: index,
+                            isDestination: selectedDestinationIndex == index,
+                            arrival: stationService.getArrivalTime(for: stop.StopID),
+                            distance: calculateDistanceToStop(stop)
+                        ) {
+                            // 點擊直接設定為目的地
+                            toggleDestination(index: index)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+        )
+    }
+    
+    // MARK: - 目的地設定方法
+    
+    private func toggleDestination(index: Int) {
+        if selectedDestinationIndex == index {
+            // 如果是目前目的地，則取消設定
+            clearDestination()
+        } else {
+            // 設定新目的地
+            setDestination(index: index)
+        }
+    }
+    
+    private func setDestination(index: Int) {
+        guard index < stationService.stops.count else { return }
+        
+        let stop = stationService.stops[index]
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            selectedDestinationIndex = index
+        }
+        
+        // 設定音頻服務目的地（自動開始追蹤）
+        audioService.setDestination(route.RouteName.Zh_tw, stopName: stop.StopName.Zh_tw)
+        
+        // 檢查位置權限並開始追蹤
+        if !locationService.hasLocationPermission {
+            requestLocationPermission()
+        } else {
+            locationService.startUpdatingLocation()
+        }
+        
+        print("🎯 [RouteDetail] 設定目的地並開始追蹤: \(stop.StopName.Zh_tw)")
+    }
+    
+    private func clearDestination() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            selectedDestinationIndex = nil
+        }
+        
+        audioService.clearDestination()
+        locationService.stopUpdatingLocation()
+        
+        print("🗑️ [RouteDetail] 已清除目的地並停止追蹤")
+    }
+    
+    private func requestLocationPermission() {
+        locationService.requestLocationPermission { success in
+            if success {
+                DispatchQueue.main.async {
+                    self.locationService.startUpdatingLocation()
+                }
+            } else {
+                print("❌ [RouteDetail] 位置權限請求失敗")
+                // 可以在這裡顯示權限請求失敗的提示
+            }
+        }
+    }
+    
+    // MARK: - 距離計算
+    
+    private func calculateDistance(to stop: BusStop.Stop, from location: CLLocation) -> Double {
+        let stopLocation = CLLocation(
+            latitude: stop.StopPosition.PositionLat,
+            longitude: stop.StopPosition.PositionLon
+        )
+        return location.distance(from: stopLocation)
+    }
+    
+    private func calculateDistanceToStop(_ stop: BusStop.Stop) -> Double? {
+        guard let userLocation = locationService.currentLocation else {
+            return nil
+        }
+        return calculateDistance(to: stop, from: userLocation)
+    }
+    
+    private func formatDistance(_ distance: Double) -> String {
+        if distance < 1000 {
+            return "\(Int(distance)) 公尺"
+        } else {
+            return String(format: "%.1f 公里", distance / 1000)
+        }
+    }
+    
+    // MARK: - 視圖元件
+    
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -586,7 +452,7 @@ struct RouteDetailView: View {
                 .multilineTextAlignment(.center)
             
             Button("重新載入") {
-                monitoringService.refreshData()
+                stationService.refreshData()
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -595,7 +461,6 @@ struct RouteDetailView: View {
         .padding(.vertical, 20)
     }
     
-    // 載入視圖
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView()
@@ -614,7 +479,6 @@ struct RouteDetailView: View {
         .padding(.vertical, 40)
     }
     
-    // 空站點視圖
     private var emptyStopsView: some View {
         VStack(spacing: 16) {
             Image(systemName: "mappin.slash")
@@ -631,7 +495,7 @@ struct RouteDetailView: View {
                 .multilineTextAlignment(.center)
             
             Button("重新載入") {
-                monitoringService.setRoute(route, direction: selectedDirection)
+                stationService.setRoute(route, direction: selectedDirection)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -639,159 +503,131 @@ struct RouteDetailView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 30)
     }
+}
+
+// MARK: - 簡化的站點行視圖
+
+struct SimpleStopRowView: View {
+    let stop: BusStop.Stop
+    let index: Int
+    let isDestination: Bool
+    let arrival: String?
+    let distance: Double?
+    let onTap: () -> Void
     
-    // 監控相關方法保持不變...
-    private func toggleMonitoring() {
-        if monitoringService.isMonitoring {
-            print("🛑 [RouteDetail] 停止監控")
-            monitoringService.stopMonitoring()
-            return
-        }
-        
-        if permissionCheckInProgress {
-            print("⚠️ [RouteDetail] 權限檢查進行中，跳過")
-            return
-        }
-        
-        print("🔍 [RouteDetail] 準備開始監控...")
-        
-        guard !monitoringService.stops.isEmpty else {
-            print("❌ [RouteDetail] 無站點資料")
-            monitoringService.refreshData()
-            return
-        }
-        
-        checkPermissionsAndStartMonitoring()
-    }
-    
-    private func checkPermissionsAndStartMonitoring() {
-        print("🔐 [RouteDetail] 開始權限檢查流程")
-        
-        let now = Date()
-        if let lastCheck = lastPermissionCheck,
-           now.timeIntervalSince(lastCheck) < 1.0 {
-            print("⚠️ [RouteDetail] 權限檢查過於頻繁，跳過")
-            return
-        }
-        
-        permissionCheckInProgress = true
-        lastPermissionCheck = now
-        
-        performPermissionCheck()
-    }
-    
-    private func performPermissionCheck() {
-        let currentStatus = locationService.authorizationStatus
-        let servicesEnabled = locationService.canUseLocationService
-        
-        print("🔍 [RouteDetail] 權限狀態檢查:")
-        print("   系統位置服務: \(servicesEnabled)")
-        print("   授權狀態: \(locationService.statusString(for: currentStatus))")
-        
-        let canUse = servicesEnabled && (currentStatus == .authorizedWhenInUse || currentStatus == .authorizedAlways)
-        
-        if canUse {
-            print("✅ [RouteDetail] 位置權限正常，開始監控")
-            startMonitoringDirectly()
-        } else {
-            let reason = servicesEnabled ? "位置權限狀態: \(locationService.statusString(for: currentStatus))" : "系統位置服務未開啟"
-            handleLocationPermissionIssue(reason: reason, status: currentStatus)
-        }
-    }
-    
-    private func handleLocationPermissionIssue(reason: String, status: CLAuthorizationStatus) {
-        print("⚠️ [RouteDetail] 位置權限問題: \(reason)")
-        
-        switch status {
-        case .notDetermined:
-            print("🔐 [RouteDetail] 權限未決定，請求權限")
-            requestLocationPermissionAndStart()
-            
-        case .denied, .restricted:
-            print("🚫 [RouteDetail] 權限被拒絕，顯示設定提示")
-            permissionCheckInProgress = false
-            showingLocationAlert = true
-            
-        default:
-            print("❓ [RouteDetail] 其他權限狀態: \(locationService.statusString(for: status))")
-            permissionCheckInProgress = false
-            showingLocationAlert = true
-        }
-    }
-    
-    private func requestLocationPermissionAndStart() {
-        print("🔐 [RouteDetail] 開始請求位置權限...")
-        
-        locationService.requestLocationPermission { success in
-            DispatchQueue.main.async {
-                permissionCheckInProgress = false
-                
-                if success {
-                    print("✅ [RouteDetail] 權限獲取成功")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        startMonitoringDirectly()
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // 站點序號或目的地圖標
+                ZStack {
+                    Circle()
+                        .fill(isDestination ? .green : .blue)
+                        .frame(width: 32, height: 32)
+                    
+                    if isDestination {
+                        Image(systemName: "bell.fill")
+                            .font(.caption)
+                            .foregroundColor(.white)
+                    } else {
+                        Text("\(index + 1)")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
                     }
-                } else {
-                    print("❌ [RouteDetail] 權限獲取失敗")
-                    showingLocationAlert = true
+                }
+                
+                // 站點資訊
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(stop.StopName.Zh_tw)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        if isDestination {
+                            Text("目的地")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(.green))
+                                .foregroundColor(.white)
+                        }
+                    }
+                    
+//                    HStack {
+//                        // 站牌序號
+//                        Text("站牌: \(stop.StopSequence)")
+//                            .font(.caption)
+//                            .foregroundColor(.secondary)
+                        
+                        // 到站時間
+                        if let arrival = arrival {
+                            Text("• \(arrival)")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+//                    }
+                }
+                
+                Spacer()
+                
+                // 距離和動作提示
+                VStack(alignment: .trailing, spacing: 4) {
+                    // 距離顯示
+                    if let distance = distance {
+                        Text(formatDistance(distance))
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(distanceColor(distance))
+                    }
+                    
+                    // 動作提示
+                    Text(isDestination ? "取消提醒" : "設為目的地")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isDestination ? .green.opacity(0.1) : .clear)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(
+                                isDestination ? .green.opacity(0.3) : .clear,
+                                lineWidth: 1
+                            )
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func formatDistance(_ distance: Double) -> String {
+        if distance < 1000 {
+            return "\(Int(distance))m"
+        } else {
+            return String(format: "%.1fkm", distance / 1000)
         }
     }
     
-    private func startMonitoringDirectly() {
-        permissionCheckInProgress = false
-        
-        let currentStatus = locationService.authorizationStatus
-        
-        guard currentStatus == .authorizedWhenInUse || currentStatus == .authorizedAlways else {
-            print("❌ [RouteDetail] 最終權限檢查失敗: \(locationService.statusString(for: currentStatus))")
-            showingLocationAlert = true
-            return
-        }
-        
-        guard !monitoringService.stops.isEmpty else {
-            print("❌ [RouteDetail] 無站點資料，無法監控")
-            return
-        }
-        
-        print("🚀 [RouteDetail] 開始監控")
-        monitoringService.startMonitoring()
-    }
-    
-    private func checkPermissionStatusAndRetry() {
-        print("🔄 [RouteDetail] 重新檢查權限狀態")
-        
-        let now = Date()
-        if let lastCheck = lastPermissionCheck,
-           now.timeIntervalSince(lastCheck) < 2.0 {
-            print("⚠️ [RouteDetail] 權限檢查過於頻繁，跳過")
-            return
-        }
-        lastPermissionCheck = now
-        
-        locationService.updateAuthorizationStatusSafely()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let (canUse, reason) = self.locationService.checkLocationServiceStatus()
-            
-            if canUse {
-                print("✅ [RouteDetail] 重新檢查成功，開始監控")
-                self.startMonitoringDirectly()
-            } else {
-                print("⚠️ [RouteDetail] 重新檢查後仍無權限: \(reason)")
-            }
-        }
-    }
-    
-    private func openAppSettings() {
-        if let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url)
+    private func distanceColor(_ distance: Double) -> Color {
+        if distance < 100 {
+            return .red
+        } else if distance < 300 {
+            return .orange
+        } else if distance < 1000 {
+            return .blue
+        } else {
+            return .secondary
         }
     }
 }
 
-// MARK: - 新的方向選擇按鈕元件
+// MARK: - 支援元件
 
 struct DirectionButton: View {
     let title: String
@@ -834,156 +670,7 @@ struct DirectionButton: View {
     }
 }
 
-// MARK: - 新的可互動站點行元件
-
-struct StopRowView: View {
-    let stop: BusStop.Stop
-    let index: Int
-    let arrival: BusArrival?
-    let distance: Double
-    let isNearest: Bool
-    let isDestination: Bool
-    let isMonitoring: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // 站點序號
-                ZStack {
-                    Circle()
-                        .fill(circleColor)
-                        .frame(width: 32, height: 32)
-                    
-                    if isDestination {
-                        Image(systemName: "flag.fill")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    } else {
-                        Text("\(index + 1)")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                }
-                
-                // 站點信息
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(stop.StopName.Zh_tw)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        if isNearest {
-                            Image(systemName: "location.fill")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                        
-                        if isDestination {
-                            Text("目的地")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(.green))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    
-                    // 到站信息
-                    if let arrival = arrival {
-                        Text(arrival.arrivalTimeText)
-                            .font(.caption)
-                            .foregroundColor(arrival.isComingSoon ? .red : .secondary)
-                            .fontWeight(arrival.isComingSoon ? .semibold : .regular)
-                    } else {
-                        Text("無到站資訊")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                // 距離和狀態
-                VStack(alignment: .trailing, spacing: 4) {
-                    if distance != Double.infinity {
-                        Text(formatDistance(distance))
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(distanceColor)
-                    }
-                    
-                    if isMonitoring && distance < 200 {
-                        Text("監控中")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(.green.opacity(0.2)))
-                            .foregroundColor(.green)
-                    }
-                }
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(backgroundColor)
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    // 計算屬性保持不變，但移除邊框效果
-    private var circleColor: Color {
-        if isDestination { return .green }
-        else if isNearest { return .orange }
-        else { return .blue }
-    }
-    
-    private var backgroundColor: Color {
-        if isDestination { return .green.opacity(0.1) }
-        else if isNearest { return .orange.opacity(0.1) }
-        else { return .clear }
-    }
-    
-    private var borderColor: Color {
-        if isDestination {
-            return .green.opacity(0.3)
-        } else if isNearest {
-            return .orange.opacity(0.3)
-        } else {
-            return .clear
-        }
-    }
-    
-    private var borderWidth: CGFloat {
-        (isDestination || isNearest) ? 1 : 0
-    }
-    
-    private var distanceColor: Color {
-        if distance < 100 {
-            return .red
-        } else if distance < 300 {
-            return .orange
-        } else {
-            return .secondary
-        }
-    }
-    
-    private func formatDistance(_ distance: Double) -> String {
-        if distance < 1000 {
-            return "\(Int(distance)) m"
-        } else {
-            return String(format: "%.1f km", distance / 1000)
-        }
-    }
-}
-
-// MARK: - 收藏按鈕元件（保持不變）
+// MARK: - 收藏按鈕元件
 
 struct FavoriteButton: View {
     let route: BusRoute
@@ -1012,14 +699,27 @@ struct FavoriteButton: View {
     }
     
     private func toggleFavorite() {
-        if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
-            favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
-        } else {
-            favoriteRoutes.append(route)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
+                favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
+            } else {
+                favoriteRoutes.append(route)
+            }
         }
         
         if let encoded = try? JSONEncoder().encode(favoriteRoutes) {
             favoriteRoutesData = encoded
         }
     }
+}
+
+#Preview {
+    RouteDetailView(route: BusRoute(
+        RouteID: "307",
+        RouteName: BusRoute.RouteName(Zh_tw: "307", En: "307"),
+        DepartureStopNameZh: "撫遠街",
+        DestinationStopNameZh: "板橋車站"
+    ))
+    .environmentObject(LocationService.shared)
+    .environmentObject(AudioNotificationService.shared)
 }

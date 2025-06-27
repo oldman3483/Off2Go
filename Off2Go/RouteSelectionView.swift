@@ -53,6 +53,22 @@ struct RouteSelectionView: View {
             }
             .onAppear {
                 loadFavoriteRoutes()
+                
+                // 檢查並載入已保存的城市
+                let savedCityId = UserDefaults.standard.string(forKey: "selectedCity")
+                print("📍 [RouteSelection] onAppear - 檢查已保存城市: \(savedCityId ?? "nil")")
+                
+                if let cityId = savedCityId,
+                   let savedCity = City.allCities.first(where: { $0.id == cityId }) {
+                    selectedCity = savedCity
+                    print("✅ [RouteSelection] 載入已保存城市: \(savedCity.nameZh)")
+                } else {
+                    // 如果沒有保存的城市，預設選擇台北並保存
+                    selectedCity = City.allCities[0]
+                    UserDefaults.standard.set(selectedCity.id, forKey: "selectedCity")
+                    print("💾 [RouteSelection] 設定預設城市: \(selectedCity.nameZh)")
+                }
+                
                 if routes.isEmpty {
                     fetchRoutes()
                 }
@@ -302,9 +318,21 @@ struct RouteSelectionView: View {
     private func selectCity(_ city: City) {
         guard selectedCity.id != city.id else { return }
         
+        print("🏙️ [RouteSelection] 選擇城市: \(city.nameZh) (\(city.id))")
+        
         withAnimation(.easeInOut(duration: 0.3)) {
             selectedCity = city
         }
+        
+        // 立即保存到 UserDefaults
+        UserDefaults.standard.set(city.id, forKey: "selectedCity")
+        UserDefaults.standard.synchronize() // 強制同步
+        
+        print("💾 [RouteSelection] 已保存城市到 UserDefaults: \(city.id)")
+        
+        // 驗證保存是否成功
+        let savedCity = UserDefaults.standard.string(forKey: "selectedCity")
+        print("✅ [RouteSelection] 驗證保存結果: \(savedCity ?? "nil")")
         
         // 延遲一點再獲取數據，讓動畫更流暢
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

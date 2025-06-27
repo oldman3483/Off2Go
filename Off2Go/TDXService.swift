@@ -540,12 +540,19 @@ class TDXService: ObservableObject {
     
     // 印出到站資料範例
     private func printArrivalSample(_ arrivals: [BusArrival]) {
-        print("📊 [TDX] 到站資料範例:")
-        for (index, arrival) in arrivals.prefix(3).enumerated() {
-            print("   \(index + 1). 站點:\(arrival.StopID) 方向:\(arrival.Direction) 時間:\(arrival.arrivalTimeText)")
-        }
-        if arrivals.count > 3 {
-            print("   ... 還有 \(arrivals.count - 3) 筆")
+        print("📊 [TDX] 到站資料分析:")
+        print("   總計: \(arrivals.count) 筆")
+        
+        // 方向分析
+        let directionGroups = Dictionary(grouping: arrivals) { $0.Direction }
+        print("   方向分布:")
+        for (direction, dirArrivals) in directionGroups.sorted(by: { $0.key < $1.key }) {
+            let directionName = direction == 0 ? "去程" : direction == 1 ? "返程" : "其他(\(direction))"
+            print("     \(directionName): \(dirArrivals.count) 筆")
+            
+            // 顯示該方向的前3個站點
+            let sampleStops = dirArrivals.prefix(3).map { "StopID:\($0.StopID)" }
+            print("       範例: \(sampleStops.joined(separator: ", "))")
         }
     }
     

@@ -98,20 +98,28 @@ class StationService: ObservableObject {
     }
     
     private func processStopsFromCache(_ stopsData: [BusStop], direction: Int) {
-        guard let route = selectedRoute,
-              let busStop = findMatchingRoute(stopsData, targetRoute: route) else {
-            print("❌ [Station] 快取資料中找不到匹配路線")
-            fetchStops() // 回退到重新請求
+        guard let route = selectedRoute else {
+            print("❌ [Station] 快取資料中找不到選擇的路線")
+            fetchStops()
             return
         }
         
-        let processedStops = processStopsByDirection(busStop.Stops, direction: direction)
+        // 根據方向選擇正確的路線資料
+        let busStop = selectCorrectRouteByDirection(stopsData, route: route, direction: direction)
+        
+        guard let selectedBusStop = busStop else {
+            print("❌ [Station] 找不到匹配方向 \(direction) 的路線資料")
+            fetchStops()
+            return
+        }
+        
+        let processedStops = processStopsByDirection(selectedBusStop.Stops, direction: direction)
         
         if processedStops.isEmpty {
             errorMessage = "該方向暫無站點資料"
         } else {
             stops = processedStops
-            print("✅ [Station] 從快取載入完成：\(processedStops.count) 個站點")
+            print("✅ [Station] 從快取載入完成：\(processedStops.count) 個站點（方向 \(direction)）")
             
             // 檢查是否有快取的到站時間
             if let route = selectedRoute,
@@ -124,16 +132,108 @@ class StationService: ObservableObject {
         }
     }
     
-    private func updateArrivalsFromCache(_ arrivals: [BusArrival]) {
-        let filteredArrivals = arrivals.filter { $0.Direction == selectedDirection }
+    private func selectCorrectRouteByDirection(_ stopsData: [BusStop], route: BusRoute, direction: Int) -> BusStop? {
+        print("🔍 [Station] === 根據方向選擇路線資料 ===")
+        print("   目標方向: \(direction)")
+        print("   可用路線數: \(stopsData.count)")
         
+        // 如果只有一條路線，直接使用
+        if stopsData.count == 1 {
+            print("✅ [Station] 只有一條路線，直接使用")
+            return stopsData[0]
+        }
+        
+        // 如果有多條路線，嘗試不同的選擇策略
+        for (index, busStop) in stopsData.enumerated() {
+            print("   路線\(index + 1): \(busStop.Stops.count)個站點")
+            if let firstStop = busStop.Stops.first, let lastStop = busStop.Stops.last {
+                print("     起點: \(firstStop.StopName.Zh_tw)")
+                print("     終點: \(lastStop.StopName.Zh_tw)")
+            }
+        }
+        
+        // 策略1: 根據站點數量選擇（通常去程和回程站點數不同）
+        let sortedByStopCount = stopsData.sorted { $0.Stops.count > $1.Stops.count }
+        
+        if direction == 0 {
+            // 去程：選擇站點數較多的
+            let selectedRoute = sortedByStopCount[0]
+            print("✅ [Station] 去程選擇：站點數最多的路線 (\(selectedRoute.Stops.count)個站點)")
+            return selectedRoute
+        } else {
+            // 回程：選擇站點數較少的（如果有多條路線的話）
+            if sortedByStopCount.count > 1 {
+                let selectedRoute = sortedByStopCount[1]
+                print("✅ [Station] 回程選擇：站點數較少的路線 (\(selectedRoute.Stops.count)個站點)")
+                return selectedRoute
+            } else {
+                let selectedRoute = sortedByStopCount[0]
+                print("✅ [Station] 回程選擇：唯一可用路線 (\(selectedRoute.Stops.count)個站點)")
+                return selectedRoute
+            }
+        }
+    }
+    
+    private func updateArrivalsFromCache(_ arrivals: [BusArrival]) {
+        print("🔄 [Station] 更新到站時間快取 - 當前方向: \(selectedDirection)")
+        print("🔄 [Station] 當前站點數: \(stops.count)，前3個StopID: \(stops.prefix(3).map { $0.StopID })")
+
+        
+        // 不要依賴方向篩選，改為以站點匹配為主
         var newArrivals: [String: BusArrival] = [:]
-        for arrival in filteredArrivals {
-            newArrivals[arrival.StopID] = arrival
+        
+        // 分析到站資料的方向分布
+        let directionGroups = Dictionary(grouping: arrivals) { $0.Direction }
+        print("📊 [Station] 到站資料方向分布:")
+        for (direction, dirArrivals) in directionGroups.sorted(by: { $0.key < $1.key }) {
+            print("   方向 \(direction): \(dirArrivals.count) 筆")
+        }
+        
+        // 嘗試多種匹配策略
+        // 策略1：直接用方向匹配（TDX 標準：0=去程, 1=返程）
+        let targetDirection = selectedDirection
+        var matchedArrivals = arrivals.filter { $0.Direction == targetDirection }
+        
+        if matchedArrivals.isEmpty && !arrivals.isEmpty {
+            print("⚠️ [Station] 策略1失敗，嘗試策略2：反向映射")
+            // 策略2：某些路線可能方向編號相反，嘗試反向匹配
+            let reverseDirection = targetDirection == 0 ? 1 : 0
+            matchedArrivals = arrivals.filter { $0.Direction == reverseDirection }
+        }
+        
+        if matchedArrivals.isEmpty && !arrivals.isEmpty {
+            print("⚠️ [Station] 策略2失敗，嘗試策略3：忽略方向")
+            // 策略3：如果還是沒有，忽略方向限制，直接用站點ID匹配
+            matchedArrivals = arrivals
+        }
+        
+        // 為當前顯示的站點尋找對應的到站時間
+        for stop in stops {
+            if let matchingArrival = matchedArrivals.first(where: { $0.StopID == stop.StopID }) {
+                newArrivals[stop.StopID] = matchingArrival
+            }
         }
         
         self.arrivals = newArrivals
-        print("📦 [Station] 從快取更新 \(newArrivals.count) 個站點的到站時間")
+        print("✅ [Station] 成功匹配 \(newArrivals.count) 個站點的到站時間")
+        
+        // 除錯資訊
+        if newArrivals.isEmpty && !arrivals.isEmpty {
+            print("❌ [Station] 到站時間匹配完全失敗，除錯資訊：")
+            print("   當前站點數：\(stops.count)")
+            print("   到站資料總數：\(arrivals.count)")
+            print("   前3個站點StopID: \(stops.prefix(3).map { $0.StopID })")
+            print("   前3個到站StopID: \(arrivals.prefix(3).map { $0.StopID })")
+            
+            // 檢查是否有StopID匹配的問題
+            let stopsStopIDs = Set(stops.map { $0.StopID })
+            let arrivalStopIDs = Set(arrivals.map { $0.StopID })
+            let intersection = stopsStopIDs.intersection(arrivalStopIDs)
+            print("   StopID交集數量: \(intersection.count)")
+            if !intersection.isEmpty {
+                print("   有交集的前3個StopID: \(Array(intersection).prefix(3))")
+            }
+        }
     }
     
     private func clearAllCaches() {
@@ -194,14 +294,9 @@ class StationService: ObservableObject {
                 self.cacheStops(stopsData, for: route.RouteID)
                 
                 // 找到匹配的路線
-                guard let busStop = self.findMatchingRoute(stopsData, targetRoute: route) else {
-                    self.errorMessage = "找不到匹配的路線資料"
-                    print("❌ [Station] 找不到匹配的路線資料")
-                    
-                    // 除錯資訊
-                    let availableRouteIDs = stopsData.map { $0.RouteID }
-                    print("📋 [Station] 可用的路線ID: \(availableRouteIDs)")
-                    
+                guard let busStop = self.selectCorrectRouteByDirection(stopsData, route: route, direction: self.selectedDirection) else {
+                    self.errorMessage = "找不到匹配方向 \(self.selectedDirection) 的路線資料"
+                    print("❌ [Station] 找不到匹配方向 \(self.selectedDirection) 的路線資料")
                     return
                 }
                 
@@ -335,57 +430,10 @@ class StationService: ObservableObject {
     }
     
     private func findMatchingRoute(_ stopsData: [BusStop], targetRoute: BusRoute) -> BusStop? {
-        print("🔍 [Station] === 尋找匹配路線 ===")
-        print("   目標 RouteID: \(targetRoute.RouteID)")
-        print("   目標 RouteName: \(targetRoute.RouteName.Zh_tw)")
-        print("   可用資料數量: \(stopsData.count)")
+        print("🔍 [Station] === 尋找匹配路線（已廢棄，改用方向選擇）===")
         
-        // 列出所有可用的路線
-        for (index, busStop) in stopsData.enumerated() {
-            print("   可用路線\(index + 1): RouteID=\(busStop.RouteID), 站點數=\(busStop.Stops.count)")
-        }
-        
-        // 完全匹配 RouteID
-        if let exactMatch = stopsData.first(where: { $0.RouteID == targetRoute.RouteID }) {
-            print("✅ [Station] 找到完全匹配的RouteID: \(exactMatch.RouteID)")
-            return exactMatch
-        }
-        
-        // 忽略大小寫匹配 RouteID
-        if let caseInsensitiveMatch = stopsData.first(where: {
-            $0.RouteID.lowercased() == targetRoute.RouteID.lowercased()
-        }) {
-            print("✅ [Station] 找到忽略大小寫匹配的RouteID: \(caseInsensitiveMatch.RouteID)")
-            return caseInsensitiveMatch
-        }
-        
-        // 包含匹配 RouteID
-        if let containsMatch = stopsData.first(where: { busStop in
-            busStop.RouteID.contains(targetRoute.RouteID) ||
-            targetRoute.RouteID.contains(busStop.RouteID)
-        }) {
-            print("✅ [Station] 找到包含匹配的RouteID: \(containsMatch.RouteID)")
-            return containsMatch
-        }
-        
-        // 路線名稱匹配
-        if let nameMatch = stopsData.first(where: { busStop in
-            busStop.RouteID == targetRoute.RouteName.Zh_tw ||
-            busStop.RouteID.contains(targetRoute.RouteName.Zh_tw)
-        }) {
-            print("✅ [Station] 找到名稱匹配: \(nameMatch.RouteID)")
-            return nameMatch
-        }
-        
-        // 如果只有一筆資料，直接使用
-        if stopsData.count == 1 {
-            let singleResult = stopsData[0]
-            print("✅ [Station] 只有一筆資料，直接使用: \(singleResult.RouteID)")
-            return singleResult
-        }
-        
-        print("❌ [Station] 無法找到匹配的路線")
-        return nil
+        // 這個方法現在改為選擇正確的方向路線
+        return selectCorrectRouteByDirection(stopsData, route: targetRoute, direction: selectedDirection)
     }
     
     private func processStopsByDirection(_ stops: [BusStop.Stop], direction: Int) -> [BusStop.Stop] {

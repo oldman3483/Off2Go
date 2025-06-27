@@ -366,7 +366,8 @@ class TDXService: ObservableObject {
     }
     
     func getStops(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
-        let shouldUseDisplayAPI = ["Taipei", "NewTaipei"].contains(city)
+        // 優先使用 DisplayStopOfRoute API，因為它包含方向資訊
+        let shouldUseDisplayAPI = ["Taipei", "NewTaipei", "Taoyuan", "Taichung"].contains(city)
         let apiEndpoint = shouldUseDisplayAPI ? "DisplayStopOfRoute" : "StopOfRoute"
         
         let urlString = "\(baseURL)/\(apiEndpoint)/City/\(city)?$filter=RouteID eq '\(routeName)'&$format=JSON"
@@ -375,6 +376,7 @@ class TDXService: ObservableObject {
         print("   城市: \(city)")
         print("   路線: \(routeName)")
         print("   端點: \(apiEndpoint)")
+        print("   URL: \(urlString)")
         
         guard let url = URL(string: urlString) else {
             let error = NSError(domain: "TDX", code: -1, userInfo: [NSLocalizedDescriptionKey: "無效的API URL"])
@@ -388,6 +390,16 @@ class TDXService: ObservableObject {
                 self.getStopsWithoutFilter(city: city, routeName: routeName, completion: completion)
             } else if let stops = result, !stops.isEmpty {
                 print("✅ [TDX] 主要API請求成功，回傳路線數: \(stops.count)")
+                
+                // 檢查每個路線的站點數量和方向資訊
+                for (index, busStop) in stops.enumerated() {
+                    print("   路線\(index + 1): \(busStop.RouteID) - \(busStop.Stops.count) 個站點")
+                    
+                    // 檢查是否有不同方向的站點
+                    let directions = Set(busStop.Stops.map { _ in 0 }) // 簡化處理，實際可能需要根據API回傳調整
+                    print("   包含方向: \(directions)")
+                }
+                
                 completion(stops, nil)
             } else {
                 print("⚠️ [TDX] filter方式沒有結果，嘗試備用方法")

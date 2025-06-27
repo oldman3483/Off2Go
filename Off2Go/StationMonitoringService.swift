@@ -139,7 +139,7 @@ class StationMonitoringService: ObservableObject {
         print("🗑️ [Monitor] 已清除目的地站點")
     }
     
-    // MARK: - 獲取站點資料 - 修復版本
+    // MARK: - 獲取站點資料
     
     private func fetchStops() {
         guard let route = selectedRoute else {
@@ -211,15 +211,15 @@ class StationMonitoringService: ObservableObject {
                     print("✅ [Monitor] 找到匹配的路線: \(busStop.RouteID)")
                     print("   原始站點數: \(busStop.Stops.count)")
                     
-                    // 根據方向過濾站點
-                    let filteredStops = self.filterStopsByDirection(busStop.Stops, direction: self.selectedDirection)
+                    // 🔥 關鍵修改：根據方向正確處理站點順序
+                    let processedStops = self.processStopsByDirection(busStop.Stops, direction: self.selectedDirection)
                     
-                    if filteredStops.isEmpty {
+                    if processedStops.isEmpty {
                         self.errorMessage = "該方向暫無站點資料"
-                        print("⚠️ [Monitor] 過濾後站點數為 0")
+                        print("⚠️ [Monitor] 處理後站點數為 0")
                     } else {
-                        self.stops = filteredStops
-                        print("✅ [Monitor] 成功載入 \(filteredStops.count) 個站點")
+                        self.stops = processedStops
+                        print("✅ [Monitor] 成功載入 \(processedStops.count) 個站點 (方向: \(self.selectedDirection))")
                         
                         // 立即更新到站時間
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -231,13 +231,55 @@ class StationMonitoringService: ObservableObject {
                         }
                         
                         // 輸出前幾個站點供除錯
-                        for (index, stop) in filteredStops.prefix(3).enumerated() {
+                        for (index, stop) in processedStops.prefix(3).enumerated() {
                             print("   站點\(index+1): \(stop.StopName.Zh_tw) (序號: \(stop.StopSequence))")
                         }
                     }
                 }
             }
         }
+    }
+
+    // 🔥 新增：正確處理不同方向的站點
+    private func processStopsByDirection(_ stops: [BusStop.Stop], direction: Int) -> [BusStop.Stop] {
+        print("🔄 [Monitor] 處理站點方向: \(direction)")
+        print("   原始站點數量: \(stops.count)")
+        
+        // 首先按照 StopSequence 排序
+        let sortedStops = stops.sorted { $0.StopSequence < $1.StopSequence }
+        
+        // 如果是回程 (direction == 1)，需要反轉順序
+        let finalStops: [BusStop.Stop]
+        
+        if direction == 1 {
+            // 回程：反轉站點順序
+            finalStops = Array(sortedStops.reversed())
+            print("🔄 [Monitor] 回程：已反轉站點順序")
+        } else {
+            // 去程：保持原始順序
+            finalStops = sortedStops
+            print("➡️ [Monitor] 去程：保持原始順序")
+        }
+        
+        print("✅ [Monitor] 最終站點數量: \(finalStops.count)")
+        
+        // 輸出前3個和後3個站點名稱供確認
+        if !finalStops.isEmpty {
+            print("📍 [Monitor] 起始站點:")
+            for (index, stop) in finalStops.prefix(3).enumerated() {
+                print("   \(index + 1). \(stop.StopName.Zh_tw)")
+            }
+            
+            if finalStops.count > 3 {
+                print("📍 [Monitor] 終點站點:")
+                for (index, stop) in finalStops.suffix(3).enumerated() {
+                    let actualIndex = finalStops.count - 3 + index + 1
+                    print("   \(actualIndex). \(stop.StopName.Zh_tw)")
+                }
+            }
+        }
+        
+        return finalStops
     }
     
     // 改進的路線匹配方法
@@ -265,16 +307,6 @@ class StationMonitoringService: ObservableObject {
         
         print("❌ [Monitor] 無法找到匹配的路線")
         return nil
-    }
-    
-    // 根據方向過濾站點
-    private func filterStopsByDirection(_ stops: [BusStop.Stop], direction: Int) -> [BusStop.Stop] {
-        // 根據站點序號排序
-        let sortedStops = stops.sorted { $0.StopSequence < $1.StopSequence }
-        
-        // 如果有方向相關的邏輯，可以在這裡實現
-        // 目前先返回所有站點
-        return sortedStops
     }
     
     // 改進的城市判斷方法

@@ -633,7 +633,7 @@ struct RouteDetailView: View {
     private func performPermissionCheck() {
         // 直接使用已儲存的權限狀態，不再查詢
         let currentStatus = locationService.authorizationStatus
-        let servicesEnabled = CLLocationManager.locationServicesEnabled()
+        let servicesEnabled = locationService.canUseLocationService
         
         print("🔍 [RouteDetail] 權限狀態檢查:")
         print("   系統位置服務: \(servicesEnabled)")

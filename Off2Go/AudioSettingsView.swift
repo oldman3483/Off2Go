@@ -1,8 +1,8 @@
 //
-//  AudioSettingsView.swift
+//  AudioSettingsView.swift - 完整優化版
 //  Off2Go
 //
-//  Audio settings for headphone notifications
+//  簡化介面，修復測試功能
 //
 
 import SwiftUI
@@ -10,6 +10,7 @@ import AVFoundation
 
 struct AudioSettingsView: View {
     @StateObject private var audioService = AudioNotificationService.shared
+    @StateObject private var waitingService = WaitingBusService.shared
     @State private var showingLanguageSheet = false
     @State private var showingTestAlert = false
     @State private var testMessage = ""
@@ -25,8 +26,8 @@ struct AudioSettingsView: View {
     var body: some View {
         NavigationView {
             List {
-                // 耳機狀態
-                headphoneStatusSection
+                // 狀態總覽
+                statusOverviewSection
                 
                 // 基本設定
                 basicSettingsSection
@@ -35,10 +36,13 @@ struct AudioSettingsView: View {
                 voiceSettingsSection
                 
                 // 目的地設定
-                destinationSettingsSection
+                destinationSection
+                
+                // 等車提醒管理
+                waitingAlertsSection
                 
                 // 測試功能
-                testSection
+                testingSection
                 
                 // 使用說明
                 instructionsSection
@@ -53,7 +57,7 @@ struct AudioSettingsView: View {
                     audioService.setVoiceLanguage(language)
                 }
             }
-            .alert("測試完成", isPresented: $showingTestAlert) {
+            .alert("測試結果", isPresented: $showingTestAlert) {
                 Button("確定", role: .cancel) { }
             } message: {
                 Text(testMessage)
@@ -61,181 +65,96 @@ struct AudioSettingsView: View {
         }
     }
     
-    // MARK: - 耳機狀態區塊
+    // MARK: - 狀態總覽
     
-    private var headphoneStatusSection: some View {
+    private var statusOverviewSection: some View {
         Section {
-            HStack {
-                Image(systemName: audioService.isHeadphonesConnected ? "headphones" : "speaker.wave.2.slash")
-                    .foregroundColor(audioService.isHeadphonesConnected ? .green : .orange)
-                    .font(.title2)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("耳機狀態")
-                        .font(.headline)
+            VStack(spacing: 12) {
+                // 音頻狀態
+                HStack {
+                    Image(systemName: audioService.isAudioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .foregroundColor(audioService.isAudioEnabled ? .green : .red)
+                        .font(.title2)
                     
-                    Text(audioService.isHeadphonesConnected ? "已連接" : "未連接")
-                        .font(.subheadline)
-                        .foregroundColor(audioService.isHeadphonesConnected ? .green : .orange)
-                }
-                
-                Spacer()
-                
-                if audioService.isHeadphonesConnected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                }
-            }
-            .padding(.vertical, 4)
-            
-            if !audioService.isHeadphonesConnected {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.blue)
-                        Text("建議使用耳機")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("語音播報")
+                            .font(.headline)
+                        Text(audioService.isAudioEnabled ? "已開啟" : "已關閉")
                             .font(.subheadline)
-                            .fontWeight(.medium)
+                            .foregroundColor(audioService.isAudioEnabled ? .green : .red)
                     }
                     
-                    Text("連接有線或藍牙耳機可獲得更好的音頻體驗，且不會打擾他人")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.blue.opacity(0.1))
-                )
-            }
-            
-        } header: {
-            Label("設備狀態", systemImage: "headphones")
-        }
-    }
-    
-    // MARK: - 基本設定區塊
-    
-    private var basicSettingsSection: some View {
-        Section {
-            // 音頻提醒開關
-            HStack {
-                Image(systemName: "speaker.wave.2.fill")
-                    .foregroundColor(.blue)
-                    .frame(width: 24)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("音頻提醒")
-                        .font(.subheadline)
-                    Text("開啟語音播報和提示音")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Spacer()
+                    
+                    Toggle("", isOn: Binding(
+                        get: { audioService.isAudioEnabled },
+                        set: { _ in audioService.toggleAudioNotifications() }
+                    ))
+                    .labelsHidden()
                 }
                 
-                Spacer()
-                
-                Toggle("", isOn: Binding(
-                    get: { audioService.isAudioEnabled },
-                    set: { _ in audioService.toggleAudioNotifications() }
-                ))
-                .labelsHidden()
-            }
-            
-            // 提醒距離設定
-            VStack(alignment: .leading, spacing: 12) {
+                // 耳機狀態
                 HStack {
-                    Image(systemName: "location.circle")
-                        .foregroundColor(.green)
-                        .frame(width: 24)
+                    Image(systemName: audioService.isHeadphonesConnected ? "headphones" : "speaker.wave.2")
+                        .foregroundColor(audioService.isHeadphonesConnected ? .blue : .orange)
+                        .font(.title3)
                     
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("提醒距離")
+                        Text("音頻輸出")
                             .font(.subheadline)
-                        Text("提前幾站開始提醒")
+                        Text(audioService.isHeadphonesConnected ? "耳機" : "揚聲器")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     
                     Spacer()
                     
-                    Text("\(audioService.notificationDistance) 站")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
+                    if audioService.isHeadphonesConnected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    } else {
+                        Text("建議使用耳機")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
                 }
                 
-                HStack(spacing: 16) {
-                    Button(action: {
-                        audioService.decreaseNotificationDistance()
-                    }) {
-                        Image(systemName: "minus.circle")
-                            .foregroundColor(audioService.notificationDistance > 1 ? .blue : .gray)
-                    }
-                    .disabled(audioService.notificationDistance <= 1)
-                    
+                // 目的地狀態
+                if let destination = audioService.currentDestination {
                     HStack {
-                        ForEach(1...5, id: \.self) { number in
-                            Circle()
-                                .fill(number <= audioService.notificationDistance ? .blue : .gray.opacity(0.3))
-                                .frame(width: 8, height: 8)
+                        Image(systemName: "location.fill")
+                            .foregroundColor(.green)
+                            .font(.title3)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("目的地")
+                                .font(.subheadline)
+                            Text(destination)
+                                .font(.caption)
+                                .foregroundColor(.green)
                         }
+                        
+                        Spacer()
+                        
+                        Button("清除") {
+                            audioService.clearDestination()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
                     }
-                    
-                    Button(action: {
-                        audioService.increaseNotificationDistance()
-                    }) {
-                        Image(systemName: "plus.circle")
-                            .foregroundColor(audioService.notificationDistance < 5 ? .blue : .gray)
-                    }
-                    .disabled(audioService.notificationDistance >= 5)
-                    
-                    Spacer()
                 }
             }
             
         } header: {
-            Label("基本設定", systemImage: "gear")
-        } footer: {
-            Text("提醒距離決定在距離目的地前幾站開始語音提醒")
+            Label("狀態總覽", systemImage: "info.circle")
         }
     }
     
-    // MARK: - 語音設定區塊
+    // MARK: - 基本設定
     
-    private var voiceSettingsSection: some View {
+    private var basicSettingsSection: some View {
         Section {
-            // 語音語言
-            Button(action: {
-                showingLanguageSheet = true
-            }) {
-                HStack {
-                    Image(systemName: "globe")
-                        .foregroundColor(.purple)
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("語音語言")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                        
-                        if let currentLanguage = availableLanguages.first(where: { $0.0 == audioService.voiceLanguage }) {
-                            Text(currentLanguage.1)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
             // 語音速度
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -243,13 +162,8 @@ struct AudioSettingsView: View {
                         .foregroundColor(.orange)
                         .frame(width: 24)
                     
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("語音速度")
-                            .font(.subheadline)
-                        Text("調整播報速度")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("語音速度")
+                        .font(.subheadline)
                     
                     Spacer()
                     
@@ -287,13 +201,8 @@ struct AudioSettingsView: View {
                         .foregroundColor(.red)
                         .frame(width: 24)
                     
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("語音音量")
-                            .font(.subheadline)
-                        Text("調整播報音量")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+                    Text("語音音量")
+                        .font(.subheadline)
                     
                     Spacer()
                     
@@ -325,68 +234,192 @@ struct AudioSettingsView: View {
             }
             
         } header: {
+            Label("基本設定", systemImage: "gear")
+        }
+    }
+    
+    // MARK: - 語音設定
+    
+    private var voiceSettingsSection: some View {
+        Section {
+            Button(action: {
+                showingLanguageSheet = true
+            }) {
+                HStack {
+                    Image(systemName: "globe")
+                        .foregroundColor(.purple)
+                        .frame(width: 24)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("語音語言")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                        
+                        if let currentLanguage = availableLanguages.first(where: { $0.0 == audioService.voiceLanguage }) {
+                            Text(currentLanguage.1)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+        } header: {
             Label("語音設定", systemImage: "mic.fill")
         }
     }
     
-    // MARK: - 目的地設定區塊
+    // MARK: - 目的地設定
     
-    private var destinationSettingsSection: some View {
+    private var destinationSection: some View {
         Section {
-            HStack {
-                Image(systemName: "location.fill")
-                    .foregroundColor(.green)
-                    .frame(width: 24)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("目前目的地")
-                        .font(.subheadline)
-                    
-                    if let destination = audioService.currentDestination {
-                        Text(destination)
-                            .font(.caption)
+            if let destination = audioService.currentDestination {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "location.fill")
                             .foregroundColor(.green)
-                    } else {
-                        Text("未設定")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text("目前目的地")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                    }
+                    
+                    Text(destination)
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                        .padding(.leading, 24)
+                    
+                    if audioService.isAudioEnabled {
+                        HStack {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            Text("將在接近時語音提醒")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        .padding(.leading, 24)
                     }
                 }
-                
-                Spacer()
-                
-                if audioService.currentDestination != nil {
-                    Button("清除") {
-                        audioService.clearDestination()
-                    }
-                    .font(.caption)
-                    .foregroundColor(.red)
+            } else {
+                HStack {
+                    Image(systemName: "location")
+                        .foregroundColor(.gray)
+                    Text("尚未設定目的地")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
             }
             
         } header: {
             Label("目的地", systemImage: "flag.fill")
         } footer: {
-            Text("在路線詳情頁面選擇目標站點後，將自動設定音頻提醒")
+            Text("在路線詳情頁面選擇目標站點後，將自動設定語音提醒")
         }
     }
     
-    // MARK: - 測試區塊
+    // MARK: - 等車提醒管理
     
-    private var testSection: some View {
+    private var waitingAlertsSection: some View {
         Section {
-            // 測試語音播報
-            Button(action: testVoiceAnnouncement) {
+            if waitingService.activeAlerts.isEmpty {
+                HStack {
+                    Image(systemName: "bell")
+                        .foregroundColor(.gray)
+                    Text("無等車提醒")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else {
+                ForEach(waitingService.activeAlerts) { alert in
+                    HStack {
+                        Image(systemName: "bell.fill")
+                            .foregroundColor(.orange)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(alert.routeName) - \(alert.stopName)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("提前 \(alert.alertMinutes) 分鐘")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button("取消") {
+                            waitingService.removeWaitingAlert(alert)
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+                }
+                
+                if waitingService.activeAlerts.count > 1 {
+                    Button("清除全部") {
+                        waitingService.clearAllAlerts()
+                    }
+                    .foregroundColor(.red)
+                    .font(.subheadline)
+                }
+            }
+            
+        } header: {
+            Label("等車提醒 (\(waitingService.activeAlerts.count))", systemImage: "bell.circle")
+        }
+    }
+    
+    // MARK: - 測試功能
+    
+    private var testingSection: some View {
+        Section {
+            // 測試一般語音
+            Button(action: testGeneralVoice) {
                 HStack {
                     Image(systemName: "play.circle")
                         .foregroundColor(.blue)
                         .frame(width: 24)
                     
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("測試語音播報")
+                        Text("測試一般語音")
                             .font(.subheadline)
                             .foregroundColor(.primary)
-                        Text("播放測試音頻")
+                        Text("播放一般站點資訊")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            // 測試等車提醒
+            Button(action: testWaitingAlert) {
+                HStack {
+                    Image(systemName: "bell")
+                        .foregroundColor(.orange)
+                        .frame(width: 24)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("測試等車提醒")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                        Text("播放緊急提醒語音")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -401,17 +434,17 @@ struct AudioSettingsView: View {
             .buttonStyle(PlainButtonStyle())
             
             // 測試到站提醒
-            Button(action: testArrivalNotification) {
+            Button(action: testArrivalAlert) {
                 HStack {
-                    Image(systemName: "bell")
-                        .foregroundColor(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
                         .frame(width: 24)
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text("測試到站提醒")
                             .font(.subheadline)
                             .foregroundColor(.primary)
-                        Text("模擬即將到站通知")
+                        Text("播放最高優先級語音")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -427,36 +460,38 @@ struct AudioSettingsView: View {
             
         } header: {
             Label("測試功能", systemImage: "waveform")
+        } footer: {
+            Text("建議戴上耳機後再測試語音功能。等車提醒和到站提醒具有最高優先級，可以在背景播放。")
         }
     }
     
-    // MARK: - 使用說明區塊
+    // MARK: - 使用說明
     
     private var instructionsSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
                 InstructionRow(
                     icon: "1.circle.fill",
-                    title: "選擇路線",
-                    description: "在路線詳情頁面選擇您要搭乘的公車路線"
+                    title: "設定目的地",
+                    description: "在路線詳情頁面選擇目標站點，系統會自動開始語音提醒"
                 )
                 
                 InstructionRow(
                     icon: "2.circle.fill",
-                    title: "設定目的地",
-                    description: "點選目標站點並啟用音頻提醒功能"
+                    title: "等車提醒",
+                    description: "點擊站點旁的🔔圖示設定等車提醒，公車接近時會自動通知"
                 )
                 
                 InstructionRow(
                     icon: "3.circle.fill",
-                    title: "連接耳機",
-                    description: "建議連接耳機以獲得最佳體驗"
+                    title: "背景播放",
+                    description: "App進入背景後仍可語音播報，建議連接耳機以獲得最佳體驗"
                 )
                 
                 InstructionRow(
                     icon: "4.circle.fill",
-                    title: "開始監控",
-                    description: "應用程式將在接近目的地前提醒您"
+                    title: "優先級系統",
+                    description: "等車提醒 > 到站提醒 > 一般語音，緊急情況會優先播報"
                 )
             }
             
@@ -467,23 +502,47 @@ struct AudioSettingsView: View {
     
     // MARK: - 測試方法
     
-    private func testVoiceAnnouncement() {
-        let testMessage = "這是 Off2Go 音頻測試，語音播報功能正常"
-        audioService.announceStationInfo(stopName: "測試站點", arrivalTime: testMessage)
+    private func testGeneralVoice() {
+        let message = "這是一般語音測試，即將到達台北車站，預計1分鐘到站"
+        audioService.announceStationInfo(stopName: "台北車站", arrivalTime: "預計1分鐘到站")
         
-        self.testMessage = "語音測試已播放"
+        testMessage = "一般語音測試已播放\n如果沒聽到聲音，請檢查音量設定"
         showingTestAlert = true
     }
     
-    private func testArrivalNotification() {
-        audioService.announceStationInfo(
-            stopName: "台北車站",
-            arrivalTime: "即將到站，請準備下車"
-        )
+    private func testWaitingAlert() {
+        let message = "注意！701公車還有2分鐘到達台北車站，請準備前往站牌"
+        audioService.announceWaitingBusAlert(message)
         
-        self.testMessage = "到站提醒測試已播放"
+        testMessage = "等車提醒測試已播放\n這是最高優先級語音，可在背景播放"
         showingTestAlert = true
     }
+    
+    private func testArrivalAlert() {
+        let message = "緊急提醒！您已到達目的地台北車站，請準備下車"
+        audioService.announceArrivalAlert(message)
+        
+        testMessage = "到站提醒測試已播放\n這是高優先級語音，會中斷其他播報"
+        showingTestAlert = true
+    }
+    
+}
+
+// 新增音頻診斷方法
+func diagnoseAudioSession() {
+    let audioSession = AVAudioSession.sharedInstance()
+    
+    print("🔍 [Audio] === 音頻會話診斷 ===")
+    print("   當前類別: \(audioSession.category)")
+    print("   當前模式: \(audioSession.mode)")
+    print("   是否活躍: \(audioSession.isOtherAudioPlaying)")
+    print("   可用類別: \(audioSession.availableCategories)")
+    print("   可用模式: \(audioSession.availableModes)")
+    print("   當前路由: \(audioSession.currentRoute.outputs.map { $0.portType })")
+    
+    #if targetEnvironment(simulator)
+    print("⚠️ [Audio] 運行在模擬器上，某些音頻功能可能受限")
+    #endif
 }
 
 // MARK: - 支援組件

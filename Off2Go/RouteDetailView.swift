@@ -12,7 +12,8 @@ import Combine
 struct RouteDetailView: View {
     let route: BusRoute
     @State private var selectedDirection = 0
-    @StateObject private var stationService = StationService() // 重新命名，移除監控概念
+    @StateObject private var stationService = StationService()
+    @StateObject private var waitingService = WaitingBusService.shared
     
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var audioService: AudioNotificationService
@@ -32,6 +33,9 @@ struct RouteDetailView: View {
                 
                 // 目的地設定狀態卡片
                 destinationStatusCard
+                
+                // 等車提醒卡片
+                waitingAlertsCard
                 
                 // 站點列表
                 stopsListView
@@ -76,30 +80,51 @@ struct RouteDetailView: View {
         }
         .onAppear {
             stationService.setRoute(route, direction: selectedDirection)
-        }
-        .onAppear {
-            stationService.setRoute(route, direction: selectedDirection)
-            
-            // 同步檢查目的地狀態
             syncDestinationState()
         }
         .onChange(of: selectedDirection) { newDirection in
-            // 只有當路線已載入且方向真的改變時才處理
             if !stationService.stops.isEmpty {
                 print("🔄 [RouteDetail] 方向切換: \(selectedDirection) -> \(newDirection)")
                 stationService.setRoute(route, direction: newDirection)
             }
         }
         .onChange(of: locationService.currentLocation) { location in
-            // 當位置更新時，檢查是否接近目的地
             if let location = location, selectedDestinationIndex != nil {
-                audioService.checkDestinationProximity(currentStops: stationService.stops, userLocation: location)
+                // 檢查是否接近目的地，並使用強化的語音播報
+                checkDestinationProximityWithEnhancedAlert(location: location)
             }
         }
     }
     
+    private func checkDestinationProximityWithEnhancedAlert(location: CLLocation) {
+        guard let destinationIndex = selectedDestinationIndex,
+              destinationIndex < stationService.stops.count else {
+            return
+        }
+        
+        let destinationStop = stationService.stops[destinationIndex]
+        let stopLocation = CLLocation(
+            latitude: destinationStop.StopPosition.PositionLat,
+            longitude: destinationStop.StopPosition.PositionLon
+        )
+        
+        let distance = location.distance(from: stopLocation)
+        
+        print("📏 [RouteDetail] 距離目的地 \(Int(distance)) 公尺")
+        
+        // 使用強化的到站提醒
+        if distance <= 100 {
+            // 100公尺內：已到達提醒（使用強化播報）
+            let message = "您已到達目的地 \(destinationStop.StopName.Zh_tw)，請準備下車"
+            audioService.announceArrivalAlert(message)
+        } else if distance <= 300 {
+            // 300公尺內：接近提醒（使用強化播報）
+            let message = "即將到達目的地 \(destinationStop.StopName.Zh_tw)，距離約 \(Int(distance)) 公尺，請準備下車"
+            audioService.announceApproachingDestination(message)
+        }
+    }
+    
     private func syncDestinationState() {
-        // 檢查 AudioService 和 UI 狀態是否同步
         let hasAudioDestination = audioService.currentDestination != nil
         let hasUIDestination = selectedDestinationIndex != nil
         
@@ -111,10 +136,8 @@ struct RouteDetailView: View {
             print("⚠️ [RouteDetail] 狀態不同步，進行修正")
             
             if hasAudioDestination && !hasUIDestination {
-                // Audio 有但 UI 沒有，清除 Audio
                 audioService.clearDestination()
             } else if !hasAudioDestination && hasUIDestination {
-                // UI 有但 Audio 沒有，清除 UI
                 selectedDestinationIndex = nil
             }
         }
@@ -248,7 +271,6 @@ struct RouteDetailView: View {
                 Spacer()
                 
                 if selectedDestinationIndex != nil {
-                    // 語音提醒狀態指示器
                     HStack(spacing: 4) {
                         if audioService.isAudioEnabled {
                             Image(systemName: "speaker.wave.2.fill")
@@ -260,7 +282,6 @@ struct RouteDetailView: View {
                                 .foregroundColor(.blue)
                         }
                         
-                        // 提醒開關
                         Toggle("", isOn: Binding(
                             get: { audioService.isAudioEnabled },
                             set: { _ in audioService.toggleAudioNotifications() }
@@ -288,7 +309,6 @@ struct RouteDetailView: View {
                         Spacer()
                     }
                     
-                    // 語音提醒狀態顯示
                     if audioService.isAudioEnabled {
                         HStack {
                             Image(systemName: "speaker.wave.3.fill")
@@ -335,7 +355,6 @@ struct RouteDetailView: View {
                         )
                     }
                     
-                    // 距離狀態顯示
                     if let userLocation = locationService.currentLocation {
                         let distance = calculateDistance(to: destinationStop, from: userLocation)
                         
@@ -395,6 +414,103 @@ struct RouteDetailView: View {
         )
     }
     
+    // MARK: - 等車提醒卡片
+    
+    @ViewBuilder
+    private var waitingAlertsCard: some View {
+        let activeAlertsForRoute = waitingService.activeAlerts.filter { alert in
+            stationService.stops.contains { $0.StopID == alert.stopID }
+        }
+        
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "bell.circle.fill")
+                    .foregroundColor(activeAlertsForRoute.isEmpty ? .gray : .orange)
+                    .font(.title3)
+                
+                Text("等車提醒")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if !activeAlertsForRoute.isEmpty {
+                    Text("\(activeAlertsForRoute.count) 個")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(.orange.opacity(0.2)))
+                        .foregroundColor(.orange)
+                }
+            }
+            
+            if !activeAlertsForRoute.isEmpty {
+                // 顯示現有的等車提醒
+                ForEach(activeAlertsForRoute) { alert in
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                        
+                        Text(alert.stopName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                        
+                        Text("提前 \(alert.alertMinutes) 分鐘")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Button("取消") {
+                            waitingService.removeWaitingAlert(alert)
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.orange.opacity(0.1))
+                    )
+                }
+            } else {
+                // 沒有等車提醒時的說明
+                HStack {
+                    Image(systemName: "hand.point.down.fill")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("點擊站點右側的🔔圖示可設定等車提醒")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Text("系統會在公車即將到站前通知您")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(activeAlertsForRoute.isEmpty ? .gray.opacity(0.1) : .orange.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            activeAlertsForRoute.isEmpty ? .gray.opacity(0.3) : .orange.opacity(0.3),
+                            lineWidth: 1
+                        )
+                )
+        )
+    }
+    
     // MARK: - 站點列表
     
     private var stopsListView: some View {
@@ -433,9 +549,10 @@ struct RouteDetailView: View {
                             index: index,
                             isDestination: selectedDestinationIndex == index,
                             arrival: stationService.getArrivalTime(for: stop.StopID),
-                            distance: calculateDistanceToStop(stop)
+                            distance: calculateDistanceToStop(stop),
+                            route: route,
+                            direction: selectedDirection
                         ) {
-                            // 點擊直接設定為目的地
                             toggleDestination(index: index)
                         }
                     }
@@ -453,10 +570,8 @@ struct RouteDetailView: View {
     
     private func toggleDestination(index: Int) {
         if selectedDestinationIndex == index {
-            // 如果是目前目的地，則取消設定
             clearDestination()
         } else {
-            // 設定新目的地
             setDestination(index: index)
         }
     }
@@ -470,10 +585,8 @@ struct RouteDetailView: View {
             selectedDestinationIndex = index
         }
         
-        // 設定音頻服務目的地（自動開始追蹤）
         audioService.setDestination(route.RouteName.Zh_tw, stopName: stop.StopName.Zh_tw)
         
-        // 檢查位置權限並開始追蹤
         if !locationService.hasLocationPermission {
             requestLocationPermission()
         } else {
@@ -492,7 +605,6 @@ struct RouteDetailView: View {
             selectedDestinationIndex = nil
         }
         
-        // 先檢查 audioService 是否真的有目的地
         if audioService.currentDestination != nil {
             print("🔊 [RouteDetail] AudioService 有目的地，執行清除")
             audioService.clearDestination()
@@ -513,7 +625,6 @@ struct RouteDetailView: View {
                 }
             } else {
                 print("❌ [RouteDetail] 位置權限請求失敗")
-                // 可以在這裡顯示權限請求失敗的提示
             }
         }
     }
@@ -614,7 +725,7 @@ struct RouteDetailView: View {
     }
 }
 
-// MARK: - 簡化的站點行視圖
+// MARK: - 站點行視圖
 
 struct SimpleStopRowView: View {
     let stop: BusStop.Stop
@@ -622,10 +733,13 @@ struct SimpleStopRowView: View {
     let isDestination: Bool
     let arrival: String?
     let distance: Double?
+    let route: BusRoute
+    let direction: Int
     let onTap: () -> Void
     
-    // 添加語音服務狀態
     @EnvironmentObject var audioService: AudioNotificationService
+    @StateObject private var waitingService = WaitingBusService.shared
+    @State private var showingWaitingOptions = false
     
     var body: some View {
         Button(action: onTap) {
@@ -650,18 +764,15 @@ struct SimpleStopRowView: View {
                 
                 // 站點資訊
                 VStack(alignment: .leading, spacing: 6) {
-                    // 站點名稱
                     Text(stop.StopName.Zh_tw)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
-                    // 標籤區域 - 改為垂直排列
                     VStack(alignment: .leading, spacing: 4) {
-                        // 目的地標籤
-                        if isDestination {
-                            HStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            if isDestination {
                                 Text("目的地")
                                     .font(.caption2)
                                     .fontWeight(.medium)
@@ -670,7 +781,6 @@ struct SimpleStopRowView: View {
                                     .background(Capsule().fill(.green))
                                     .foregroundColor(.white)
                                 
-                                // 在同一行顯示語音狀態
                                 if audioService.isAudioEnabled {
                                     HStack(spacing: 2) {
                                         Image(systemName: "speaker.wave.2.fill")
@@ -684,9 +794,22 @@ struct SimpleStopRowView: View {
                                     .background(Capsule().fill(.blue.opacity(0.2)))
                                 }
                             }
+                            
+                            // 等車提醒標籤
+                            if waitingService.hasWaitingAlert(for: stop.StopID) {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "bell.fill")
+                                        .font(.caption2)
+                                    Text("等車中")
+                                        .font(.caption2)
+                                }
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(.orange.opacity(0.2)))
+                            }
                         }
                         
-                        // 到站時間
                         if let arrival = arrival {
                             Text("• \(arrival)")
                                 .font(.caption)
@@ -697,9 +820,8 @@ struct SimpleStopRowView: View {
                 
                 Spacer()
                 
-                // 右側資訊 - 改為垂直排列
-                VStack(alignment: .trailing, spacing: 6) {
-                    // 距離顯示
+                // 右側按鈕區域
+                HStack(spacing: 8) {
                     if let distance = distance {
                         Text(formatDistance(distance))
                             .font(.caption)
@@ -707,27 +829,15 @@ struct SimpleStopRowView: View {
                             .foregroundColor(distanceColor(distance))
                     }
                     
-                    // 動作提示 - 簡化文字
-                    if isDestination {
-                        if audioService.isAudioEnabled {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("🎧 提醒中")
-                                    .font(.caption2)
-                                    .foregroundColor(.blue)
-                                Text("點擊取消")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else {
-                            Text("取消提醒")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        Text("設為目的地")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                    // 等車提醒按鈕
+                    Button(action: {
+                        showingWaitingOptions = true
+                    }) {
+                        Image(systemName: waitingService.hasWaitingAlert(for: stop.StopID) ? "bell.fill" : "bell")
+                            .foregroundColor(waitingService.hasWaitingAlert(for: stop.StopID) ? .orange : .gray)
+                            .font(.title3)
                     }
+                    .buttonStyle(PlainButtonStyle())
                 }
             }
             .padding(.vertical, 12)
@@ -745,6 +855,47 @@ struct SimpleStopRowView: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
+        .actionSheet(isPresented: $showingWaitingOptions) {
+            if waitingService.hasWaitingAlert(for: stop.StopID) {
+                return ActionSheet(
+                    title: Text("等車提醒"),
+                    message: Text("管理 \(stop.StopName.Zh_tw) 的等車提醒"),
+                    buttons: [
+                        .destructive(Text("取消等車提醒")) {
+                            waitingService.removeWaitingAlert(for: stop.StopID)
+                        },
+                        .cancel()
+                    ]
+                )
+            } else {
+                return ActionSheet(
+                    title: Text("等車提醒"),
+                    message: Text("在 \(stop.StopName.Zh_tw) 設定等車提醒"),
+                    buttons: [
+                        .default(Text("提前 1 分鐘提醒")) {
+                            addWaitingAlert(minutes: 1)
+                        },
+                        .default(Text("提前 3 分鐘提醒")) {
+                            addWaitingAlert(minutes: 3)
+                        },
+                        .default(Text("提前 5 分鐘提醒")) {
+                            addWaitingAlert(minutes: 5)
+                        },
+                        .cancel()
+                    ]
+                )
+            }
+        }
+    }
+    
+    private func addWaitingAlert(minutes: Int) {
+        waitingService.addWaitingAlert(
+            routeName: route.RouteName.Zh_tw,
+            stopName: stop.StopName.Zh_tw,
+            stopID: stop.StopID,
+            direction: direction,
+            alertMinutes: minutes
+        )
     }
     
     private func formatDistance(_ distance: Double) -> String {
@@ -811,7 +962,7 @@ struct DirectionButton: View {
     }
 }
 
-// MARK: - 收藏按鈕元件
+                                // MARK: - 收藏按鈕元件
 
 struct FavoriteButton: View {
     let route: BusRoute

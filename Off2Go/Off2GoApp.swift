@@ -20,15 +20,15 @@ struct Off2GoApp: App {
                 .environmentObject(locationService)
                 .environmentObject(audioService)
                 .onAppear {
-                    // 请求权限
+                    // 請求權限
                     locationService.requestLocationPermission()
                     
-                    // 请求通知权限
+                    // 請求通知權限
                     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
                         if granted {
-                            print("通知权限已获得")
+                            print("通知權限已獲得")
                         } else if let error = error {
-                            print("通知权限请求失败: \(error.localizedDescription)")
+                            print("通知權限请求失败: \(error.localizedDescription)")
                         }
                     }
                 }

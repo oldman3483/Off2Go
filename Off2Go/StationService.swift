@@ -3,7 +3,7 @@
 //  Off2Go
 //
 //  Created by Heidie Lee on 2025/6/27.
-//  簡化的站點資料服務，移除複雜的監控邏輯，添加快取機制
+//  修復版本：改善 API 請求頻率控制和快取機制
 //
 
 import Foundation
@@ -20,15 +20,20 @@ class StationService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
-    // 新增：快取機制
+    // 快取機制 - 調整時間
     private var stopsCache: [String: [BusStop]] = [:] // RouteID -> BusStop 陣列
     private var lastFetchTime: [String: Date] = [:] // RouteID -> 最後請求時間
     private var arrivalCache: [String: [BusArrival]] = [:] // RouteID -> 到站時間陣列
     private var lastArrivalFetchTime: [String: Date] = [:] // RouteID -> 最後到站時間請求時間
     
-    private let cacheValidDuration: TimeInterval = 300 // 5分鐘站點快取
-    private let arrivalCacheValidDuration: TimeInterval = 30 // 30秒到站時間快取
-    private let minimumFetchInterval: TimeInterval = 10 // 最小請求間隔10秒
+    private let cacheValidDuration: TimeInterval = 1800 // 30分鐘站點快取
+    private let arrivalCacheValidDuration: TimeInterval = 45 // 45秒到站時間快取
+    private let minimumFetchInterval: TimeInterval = 20 // 20秒最小請求間隔
+    
+    // 新增：全域請求控制（避免多個 StationService 實例同時請求）
+    private static var globalLastRequestTime: Date?
+    private static let globalMinimumInterval: TimeInterval = 10 // 全域10秒間隔
+    private static var activeRequests: Set<String> = [] // 正在進行的請求
     
     private var arrivalUpdateTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -36,6 +41,7 @@ class StationService: ObservableObject {
     deinit {
         stopArrivalUpdates()
         clearAllCaches()
+        print("🗑️ [Station] StationService 已清理")
     }
     
     // MARK: - 設定路線（添加快取邏輯）
@@ -61,28 +67,36 @@ class StationService: ObservableObject {
         fetchStops()
     }
     
-    // MARK: - 快取管理方法
+    // MARK: - 快取管理方法（修復版）
     
     private func getCachedStops(for routeID: String) -> [BusStop]? {
         guard let cachedStops = stopsCache[routeID],
-              let lastFetch = lastFetchTime[routeID],
-              Date().timeIntervalSince(lastFetch) < cacheValidDuration else {
-            print("📦 [Station] 站點快取過期或不存在: \(routeID)")
+              let lastFetch = lastFetchTime[routeID] else {
+            print("📦 [Station] 無站點快取: \(routeID)")
             return nil
         }
-        print("📦 [Station] 找到有效的站點快取: \(routeID)")
-        return cachedStops
+        
+        let timeSinceLastFetch = Date().timeIntervalSince(lastFetch)
+        let isValid = timeSinceLastFetch < cacheValidDuration
+        
+        print("📦 [Station] 站點快取檢查: \(routeID), 經過時間: \(Int(timeSinceLastFetch))秒, 有效: \(isValid)")
+        
+        return isValid ? cachedStops : nil
     }
     
     private func getCachedArrivals(for routeID: String) -> [BusArrival]? {
         guard let cachedArrivals = arrivalCache[routeID],
-              let lastFetch = lastArrivalFetchTime[routeID],
-              Date().timeIntervalSince(lastFetch) < arrivalCacheValidDuration else {
-            print("📦 [Station] 到站時間快取過期或不存在: \(routeID)")
+              let lastFetch = lastArrivalFetchTime[routeID] else {
+            print("📦 [Station] 無到站時間快取: \(routeID)")
             return nil
         }
-        print("📦 [Station] 找到有效的到站時間快取: \(routeID)")
-        return cachedArrivals
+        
+        let timeSinceLastFetch = Date().timeIntervalSince(lastFetch)
+        let isValid = timeSinceLastFetch < arrivalCacheValidDuration
+        
+        print("📦 [Station] 到站時間快取檢查: \(routeID), 經過時間: \(Int(timeSinceLastFetch))秒, 有效: \(isValid)")
+        
+        return isValid ? cachedArrivals : nil
     }
     
     private func cacheStops(_ stopsData: [BusStop], for routeID: String) {
@@ -316,15 +330,15 @@ class StationService: ObservableObject {
         }
     }
     
-    // MARK: - 到站時間更新（添加快取和頻率控制）
+    // MARK: - 到站時間更新（修復版本）
     
     private func startArrivalUpdates() {
-        stopArrivalUpdates()
+        stopArrivalUpdates() // 確保只有一個 Timer
         
         // 立即更新一次（可能使用快取）
         updateArrivalTimes()
         
-        // 改為每60秒更新一次（降低請求頻率）
+        // 每60秒更新一次（保持合理頻率）
         arrivalUpdateTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.updateArrivalTimes()
         }
@@ -341,37 +355,62 @@ class StationService: ObservableObject {
     private func updateArrivalTimes() {
         guard let route = selectedRoute else { return }
         
+        let routeID = route.RouteID
+        
+        // 全域請求頻率控制（避免多個 StationService 同時請求）
+        let now = Date()
+        if let globalLastRequest = Self.globalLastRequestTime,
+           now.timeIntervalSince(globalLastRequest) < Self.globalMinimumInterval {
+            print("🚫 [Station] 全域請求間隔控制，跳過請求")
+            return
+        }
+        
+        // 檢查是否已有相同請求在進行中
+        if Self.activeRequests.contains(routeID) {
+            print("🚫 [Station] 相同路線正在請求中，跳過請求: \(routeID)")
+            return
+        }
+        
         // 先檢查快取
-        if let cachedArrivals = getCachedArrivals(for: route.RouteID) {
-            print("📦 [Station] 使用快取的到站時間")
+        if let cachedArrivals = getCachedArrivals(for: routeID) {
+            print("📦 [Station] 使用有效的到站時間快取")
             updateArrivalsFromCache(cachedArrivals)
             return
         }
         
-        // 檢查是否最近才請求過到站時間
-        if let lastFetch = lastArrivalFetchTime[route.RouteID],
-           Date().timeIntervalSince(lastFetch) < 20.0 { // 20秒內不重複請求到站時間
-            print("⚠️ [Station] 最近才請求過到站時間，跳過重複請求")
+        // 檢查個別路線請求間隔
+        if let lastFetch = lastArrivalFetchTime[routeID],
+           now.timeIntervalSince(lastFetch) < minimumFetchInterval {
+            print("⚠️ [Station] 路線請求間隔控制，跳過請求: \(routeID)")
             return
         }
         
+        // 更新全域和路線請求時間
+        Self.globalLastRequestTime = now
+        lastArrivalFetchTime[routeID] = now
+        Self.activeRequests.insert(routeID)
+        
         let city = determineCityFromRoute()
         
-        print("🔄 [Station] 請求新的到站時間資料")
+        print("🔄 [Station] 執行 API 請求：\(route.RouteName.Zh_tw)")
         
-        // 記錄請求時間
-        lastArrivalFetchTime[route.RouteID] = Date()
-        
-        tdxService.getEstimatedTimeOfArrival(city: city, routeName: route.RouteID) { [weak self] arrivals, error in
-            guard let self = self else { return }
+        tdxService.getEstimatedTimeOfArrival(city: city, routeName: routeID) { [weak self] arrivals, error in
+            guard let self = self else {
+                Self.activeRequests.remove(routeID)
+                return
+            }
             
             DispatchQueue.main.async {
+                // 移除活動請求標記
+                Self.activeRequests.remove(routeID)
+                
                 if let arrivals = arrivals {
                     // 快取到站時間
-                    self.cacheArrivals(arrivals, for: route.RouteID)
+                    self.cacheArrivals(arrivals, for: routeID)
                     
                     // 更新顯示
                     self.updateArrivalsFromCache(arrivals)
+                    print("✅ [Station] 成功更新到站時間: \(route.RouteName.Zh_tw)")
                 } else if let error = error {
                     print("❌ [Station] 獲取到站時間失敗: \(error.localizedDescription)")
                 }
@@ -429,13 +468,6 @@ class StationService: ObservableObject {
         return "NewTaipei" // 改為預設新北市
     }
     
-    private func findMatchingRoute(_ stopsData: [BusStop], targetRoute: BusRoute) -> BusStop? {
-        print("🔍 [Station] === 尋找匹配路線（已廢棄，改用方向選擇）===")
-        
-        // 這個方法現在改為選擇正確的方向路線
-        return selectCorrectRouteByDirection(stopsData, route: targetRoute, direction: selectedDirection)
-    }
-    
     private func processStopsByDirection(_ stops: [BusStop.Stop], direction: Int) -> [BusStop.Stop] {
         let sortedStops = stops.sorted { $0.StopSequence < $1.StopSequence }
         
@@ -457,6 +489,7 @@ class StationService: ObservableObject {
             lastFetchTime.removeValue(forKey: routeID)
             arrivalCache.removeValue(forKey: routeID)
             lastArrivalFetchTime.removeValue(forKey: routeID)
+            Self.activeRequests.remove(routeID)
             print("🗑️ [Station] 已清除路線 \(routeID) 的快取")
         }
         
@@ -471,11 +504,13 @@ class StationService: ObservableObject {
     
     func clearCache() {
         clearAllCaches()
+        Self.activeRequests.removeAll()
     }
     
     func getCacheInfo() -> String {
         let stopsCount = stopsCache.count
         let arrivalsCount = arrivalCache.count
-        return "站點快取: \(stopsCount), 到站時間快取: \(arrivalsCount)"
+        let activeCount = Self.activeRequests.count
+        return "站點快取: \(stopsCount), 到站時間快取: \(arrivalsCount), 活動請求: \(activeCount)"
     }
 }

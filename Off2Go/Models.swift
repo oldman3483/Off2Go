@@ -158,6 +158,28 @@ struct NearbyStopInfo {
     }
 }
 
+// MARK: - 等車提醒模型
+struct WaitingBusAlert: Codable, Identifiable {
+    let id = UUID()
+    let routeName: String
+    let stopName: String
+    let stopID: String
+    let direction: Int
+    let createdTime: Date
+    let alertMinutes: Int // 提前幾分鐘提醒
+    
+    var isActive: Bool {
+        // 等車提醒有效期限（例如30分鐘）
+        Date().timeIntervalSince(createdTime) < 1800
+    }
+    
+    var formattedCreatedTime: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: createdTime)
+    }
+}
+
 // MARK: - 新增：路線資訊模型
 struct RouteInfo: Hashable {
     let routeName: String

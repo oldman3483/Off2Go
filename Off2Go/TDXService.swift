@@ -29,12 +29,16 @@ class TDXService: ObservableObject {
     
     // 請求頻率控制
     private var lastRequestTime: Date?
-    private let minimumRequestInterval: TimeInterval = 2.0
+    private let minimumRequestInterval: TimeInterval = 3.0
     private var requestQueue = DispatchQueue(label: "TDXRequestQueue", qos: .userInitiated)
-    
+
     private init() {
         refreshAccessToken()
     }
+    
+    // 請求計數器（避免超過每分鐘20次）
+    private var requestTimes: [Date] = []
+    private let maxRequestsPerMinute = 18 // 設為18次，留點緩衝
     
     // MARK: - Token管理
     
@@ -114,6 +118,21 @@ class TDXService: ObservableObject {
         requestQueue.async { [weak self] in
             guard let self = self else { return }
             
+            // 清理一分鐘前的請求記錄
+            let oneMinuteAgo = Date().addingTimeInterval(-60)
+            self.requestTimes = self.requestTimes.filter { $0 > oneMinuteAgo }
+            
+            // 檢查是否超過每分鐘限制
+            if self.requestTimes.count >= self.maxRequestsPerMinute {
+                let waitTime = 60 - Date().timeIntervalSince(self.requestTimes.first!)
+                print("⏳ [TDX] 每分鐘請求限制，等待 \(Int(waitTime)) 秒")
+                Thread.sleep(forTimeInterval: waitTime + 1)
+                
+                // 重新清理
+                let newOneMinuteAgo = Date().addingTimeInterval(-60)
+                self.requestTimes = self.requestTimes.filter { $0 > newOneMinuteAgo }
+            }
+            
             // 檢查請求間隔
             let now = Date()
             if let lastRequest = self.lastRequestTime {
@@ -125,6 +144,8 @@ class TDXService: ObservableObject {
                 }
             }
             
+            // 記錄請求時間
+            self.requestTimes.append(Date())
             self.lastRequestTime = Date()
             
             DispatchQueue.main.async {

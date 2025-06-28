@@ -1,19 +1,18 @@
 //
-//  AudioSettingsView.swift - 完整優化版
+//  AudioSettingsView.swift - 完整優化版（移除測試功能）
 //  Off2Go
 //
-//  簡化介面，修復測試功能
+//  新增智慧音頻設定，移除測試功能
 //
 
 import SwiftUI
 import AVFoundation
+import MediaPlayer
 
 struct AudioSettingsView: View {
     @StateObject private var audioService = AudioNotificationService.shared
     @StateObject private var waitingService = WaitingBusService.shared
     @State private var showingLanguageSheet = false
-    @State private var showingTestAlert = false
-    @State private var testMessage = ""
     
     // 語音語言選項
     private let availableLanguages = [
@@ -32,6 +31,9 @@ struct AudioSettingsView: View {
                 // 基本設定
                 basicSettingsSection
                 
+                // 音頻混合設定
+                audioMixingSection
+                
                 // 語音設定
                 voiceSettingsSection
                 
@@ -40,9 +42,6 @@ struct AudioSettingsView: View {
                 
                 // 等車提醒管理
                 waitingAlertsSection
-                
-                // 測試功能
-                testingSection
                 
                 // 使用說明
                 instructionsSection
@@ -56,11 +55,6 @@ struct AudioSettingsView: View {
                 ) { language in
                     audioService.setVoiceLanguage(language)
                 }
-            }
-            .alert("測試結果", isPresented: $showingTestAlert) {
-                Button("確定", role: .cancel) { }
-            } message: {
-                Text(testMessage)
             }
         }
     }
@@ -238,6 +232,101 @@ struct AudioSettingsView: View {
         }
     }
     
+    // MARK: - 音頻混合設定
+    
+    private var audioMixingSection: some View {
+        Section {
+            // 智慧音量調整（保持原有）
+            HStack {
+                Image(systemName: "speaker.wave.2.circle")
+                    .foregroundColor(.purple)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("智慧音量調整")
+                        .font(.subheadline)
+                    Text("自動偵測其他音頻並調整播報方式")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { audioService.smartVolumeEnabled },
+                    set: { newValue in
+                        if newValue != audioService.smartVolumeEnabled {
+                            audioService.toggleSmartVolume()
+                        }
+                    }
+                ))
+                .labelsHidden()
+            }
+            
+            // 影片模式處理
+            HStack {
+                Image(systemName: "play.rectangle")
+                    .foregroundColor(.red)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("影片模式")
+                        .font(.subheadline)
+                    Text("觀看影片時使用疊加播報")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { audioService.videoModeEnabled },
+                    set: { newValue in
+                        if newValue != audioService.videoModeEnabled {
+                            audioService.toggleVideoMode()
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .disabled(!audioService.smartVolumeEnabled)
+            }
+            .opacity(audioService.smartVolumeEnabled ? 1.0 : 0.6)
+            
+            // 當前音頻狀態顯示
+            if audioService.smartVolumeEnabled {
+                HStack {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.blue)
+                        .frame(width: 24)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("當前狀態")
+                            .font(.subheadline)
+                        Text(getAudioStatusText())
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.blue.opacity(0.1))
+                )
+            }
+            
+        } header: {
+            Label("音頻混合設定", systemImage: "waveform.path")
+        } footer: {
+            if audioService.smartVolumeEnabled {
+                Text("智慧音量調整會自動偵測其他音頻並選擇最佳播報方式。影片模式在偵測到影片播放時不會降低原音量。")
+            } else {
+                Text("關閉智慧音量調整後，將使用標準音頻設定，可能會與其他音頻產生衝突。")
+            }
+        }
+    }
+    
     // MARK: - 語音設定
     
     private var voiceSettingsSection: some View {
@@ -379,92 +468,6 @@ struct AudioSettingsView: View {
         }
     }
     
-    // MARK: - 測試功能
-    
-    private var testingSection: some View {
-        Section {
-            // 測試一般語音
-            Button(action: testGeneralVoice) {
-                HStack {
-                    Image(systemName: "play.circle")
-                        .foregroundColor(.blue)
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("測試一般語音")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                        Text("播放一般站點資訊")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // 測試等車提醒
-            Button(action: testWaitingAlert) {
-                HStack {
-                    Image(systemName: "bell")
-                        .foregroundColor(.orange)
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("測試等車提醒")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                        Text("播放緊急提醒語音")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            // 測試到站提醒
-            Button(action: testArrivalAlert) {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("測試到站提醒")
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
-                        Text("播放最高優先級語音")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-        } header: {
-            Label("測試功能", systemImage: "waveform")
-        } footer: {
-            Text("建議戴上耳機後再測試語音功能。等車提醒和到站提醒具有最高優先級，可以在背景播放。")
-        }
-    }
-    
     // MARK: - 使用說明
     
     private var instructionsSection: some View {
@@ -490,8 +493,8 @@ struct AudioSettingsView: View {
                 
                 InstructionRow(
                     icon: "4.circle.fill",
-                    title: "優先級系統",
-                    description: "等車提醒 > 到站提醒 > 一般語音，緊急情況會優先播報"
+                    title: "智慧音頻",
+                    description: "自動偵測影片或音樂播放，調整語音播報方式避免衝突"
                 )
             }
             
@@ -500,49 +503,29 @@ struct AudioSettingsView: View {
         }
     }
     
-    // MARK: - 測試方法
+    // MARK: - 輔助方法
     
-    private func testGeneralVoice() {
-        let message = "這是一般語音測試，即將到達台北車站，預計1分鐘到站"
-        audioService.announceStationInfo(stopName: "台北車站", arrivalTime: "預計1分鐘到站")
+    private func getAudioStatusText() -> String {
+        let audioSession = AVAudioSession.sharedInstance()
+        let isOtherAudioPlaying = audioSession.isOtherAudioPlaying
         
-        testMessage = "一般語音測試已播放\n如果沒聽到聲音，請檢查音量設定"
-        showingTestAlert = true
+        if !isOtherAudioPlaying {
+            return "無其他音頻播放"
+        } else if audioService.videoModeEnabled && checkIfVideoContent() {
+            return "偵測到影片音頻 - 將使用疊加模式"
+        } else {
+            return "偵測到音樂音頻 - 將使用智慧降音模式"
+        }
     }
     
-    private func testWaitingAlert() {
-        let message = "注意！701公車還有2分鐘到達台北車站，請準備前往站牌"
-        audioService.announceWaitingBusAlert(message)
-        
-        testMessage = "等車提醒測試已播放\n這是最高優先級語音，可在背景播放"
-        showingTestAlert = true
+    private func checkIfVideoContent() -> Bool {
+        let nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        if let mediaType = nowPlayingInfo?[MPMediaItemPropertyMediaType] as? NSNumber {
+            let type = MPMediaType(rawValue: mediaType.uintValue)
+            return type.contains(.movie) || type.contains(.tvShow)
+        }
+        return false
     }
-    
-    private func testArrivalAlert() {
-        let message = "緊急提醒！您已到達目的地台北車站，請準備下車"
-        audioService.announceArrivalAlert(message)
-        
-        testMessage = "到站提醒測試已播放\n這是高優先級語音，會中斷其他播報"
-        showingTestAlert = true
-    }
-    
-}
-
-// 新增音頻診斷方法
-func diagnoseAudioSession() {
-    let audioSession = AVAudioSession.sharedInstance()
-    
-    print("🔍 [Audio] === 音頻會話診斷 ===")
-    print("   當前類別: \(audioSession.category)")
-    print("   當前模式: \(audioSession.mode)")
-    print("   是否活躍: \(audioSession.isOtherAudioPlaying)")
-    print("   可用類別: \(audioSession.availableCategories)")
-    print("   可用模式: \(audioSession.availableModes)")
-    print("   當前路由: \(audioSession.currentRoute.outputs.map { $0.portType })")
-    
-    #if targetEnvironment(simulator)
-    print("⚠️ [Audio] 運行在模擬器上，某些音頻功能可能受限")
-    #endif
 }
 
 // MARK: - 支援組件

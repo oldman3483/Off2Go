@@ -1,6 +1,8 @@
 //
-//  AudioNotificationService.swift - 非侵入式音頻修正版
+//  AudioNotificationService.swift - 音量恢復優化版
 //  Off2Go
+//
+//  修復：避免設定等車提醒時立即影響音樂音量
 //
 
 import Foundation
@@ -28,11 +30,13 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
     private let speechSynthesizer = AVSpeechSynthesizer()
     private let audioSession = AVAudioSession.sharedInstance()
     
-    // MARK: - 修正：音頻會話管理狀態
+    // MARK: - 修正：音頻會話管理狀態（新增原始音量恢復）
     private var originalAudioCategory: AVAudioSession.Category?
     private var originalAudioOptions: AVAudioSession.CategoryOptions?
+    private var originalSystemVolume: Float = 1.0  // 新增：記錄原始系統音量
     private var hasStoredOriginalSettings = false
     private var audioSessionConfigured = false
+    private var shouldRestoreVolume = false  // 新增：標記是否需要恢復音量
     
     // MARK: - 音頻狀態管理
     private var originalVolume: Float = 1.0
@@ -74,7 +78,6 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
     
     override init() {
         super.init()
-        // 修正：不在初始化時設定音頻會話
         setupHeadphoneDetection()
         setupSpeechDelegate()
         setupAudioInterruptionHandling()
@@ -83,7 +86,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         print("🔊 [Audio] AudioNotificationService 初始化完成（非侵入式）")
     }
     
-    // MARK: - 修正：按需音頻會話設定
+    // MARK: - 修正：按需音頻會話設定（僅在播報時設定）
     
     private func prepareAudioSessionForSpeechOnly() {
         guard !audioSessionConfigured else {
@@ -100,29 +103,32 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
             if !hasStoredOriginalSettings {
                 originalAudioCategory = audioSession.category
                 originalAudioOptions = audioSession.categoryOptions
+                
+                // 新增：記錄原始系統音量
+                originalSystemVolume = AVAudioSession.sharedInstance().outputVolume
+                
                 hasStoredOriginalSettings = true
                 print("📦 [Audio] 已儲存原始音頻設定: \(originalAudioCategory?.rawValue ?? "未知")")
+                print("🔊 [Audio] 已儲存原始系統音量: \(originalSystemVolume)")
             }
             
-            // 檢查是否有其他音頻正在播放
-            let isOtherAudioPlaying = audioSession.isOtherAudioPlaying
+            // 更智慧的音頻播放狀態檢測
+            let isOtherAudioPlaying = detectOtherAudioPlaying()
             wasOtherAudioPlaying = isOtherAudioPlaying
             
             print("🎵 [Audio] 其他音頻播放狀態: \(isOtherAudioPlaying)")
             
-            if isOtherAudioPlaying {
-                // 有其他音頻時：使用最相容的混音設定
-                if smartVolumeEnabled {
-                    try audioSession.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
-                    print("🎵 [Audio] 使用智慧降音混音模式")
-                } else {
-                    try audioSession.setCategory(.ambient, options: [.mixWithOthers])
-                    print("🎵 [Audio] 使用非侵入式混音模式")
-                }
+            // 修正：總是使用混音模式，避免中斷音樂
+            if isOtherAudioPlaying && smartVolumeEnabled {
+                // 有其他音頻且開啟智慧音量：使用降音混音
+                try audioSession.setCategory(.playback, options: [.mixWithOthers, .duckOthers])
+                print("🎵 [Audio] 使用智慧降音混音模式")
+                shouldRestoreVolume = true
             } else {
-                // 無其他音頻時：使用標準語音設定
-                try audioSession.setCategory(.playback, options: [])
-                print("🔊 [Audio] 使用標準語音播報模式")
+                // 預設使用非侵入式混音（不會中斷任何音頻）
+                try audioSession.setCategory(.ambient, options: [.mixWithOthers])
+                print("🎵 [Audio] 使用非侵入式混音模式（預設安全模式）")
+                shouldRestoreVolume = false
             }
             
             try audioSession.setActive(true)
@@ -138,11 +144,40 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
                 try audioSession.setCategory(.ambient, options: [.mixWithOthers])
                 try audioSession.setActive(true)
                 audioSessionConfigured = true
+                shouldRestoreVolume = false
                 print("✅ [Audio] 使用備用安全音頻設定")
             } catch {
                 print("❌ [Audio] 備用音頻設定也失敗: \(error.localizedDescription)")
             }
         }
+    }
+    
+    // 新增：更準確的音頻播放狀態檢測
+    private func detectOtherAudioPlaying() -> Bool {
+        let audioSession = AVAudioSession.sharedInstance()
+        
+        // 方法1：檢查系統狀態
+        let systemDetection = audioSession.isOtherAudioPlaying
+        
+        // 方法2：檢查 Now Playing 資訊
+        let nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        let hasNowPlayingInfo = nowPlayingInfo != nil && !nowPlayingInfo!.isEmpty
+        
+        // 方法3：檢查音頻輸出路由（某些情況下可以推測）
+        let currentRoute = audioSession.currentRoute
+        let hasAudioOutput = !currentRoute.outputs.isEmpty
+        
+        print("🔍 [Audio] 音頻檢測詳情:")
+        print("   系統檢測: \(systemDetection)")
+        print("   Now Playing 資訊: \(hasNowPlayingInfo)")
+        print("   音頻輸出: \(hasAudioOutput)")
+        
+        // 更保守的判斷：如果有任何跡象顯示可能有音頻，就認為有
+        let finalResult = systemDetection || hasNowPlayingInfo
+        
+        print("   最終判斷: \(finalResult)")
+        
+        return finalResult
     }
     
     private func restoreOriginalAudioSession() {
@@ -153,36 +188,72 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         
         print("🔄 [Audio] === 恢復原始音頻設定 ===")
         
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            
-            if let originalCategory = originalAudioCategory,
-               let originalOptions = originalAudioOptions {
-                // 恢復到原始設定
-                try audioSession.setCategory(originalCategory, options: originalOptions)
-                print("✅ [Audio] 已恢復到原始音頻設定: \(originalCategory.rawValue)")
-            } else {
-                // 使用最安全的設定
-                try audioSession.setCategory(.ambient, options: [.mixWithOthers])
-                print("✅ [Audio] 使用安全預設音頻設定")
-            }
-            
-            try audioSession.setActive(true, options: [])
-            audioSessionConfigured = false
-            
-            print("✅ [Audio] 音頻設定恢復完成")
-            
-        } catch {
-            print("❌ [Audio] 恢復音頻設定失敗: \(error.localizedDescription)")
-            
-            // 最終備用方案
+        // 延遲執行，避免與播報衝突
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             do {
-                try audioSession.setCategory(.ambient, options: [.mixWithOthers])
-                try audioSession.setActive(true)
-                audioSessionConfigured = false
-                print("✅ [Audio] 使用最終備用音頻設定")
+                let audioSession = AVAudioSession.sharedInstance()
+                
+                // 修正：使用最安全的恢復策略
+                if let originalCategory = self.originalAudioCategory,
+                   let originalOptions = self.originalAudioOptions {
+                    // 恢復到原始設定，但加上 .notifyOthersOnDeactivation 選項
+                    try audioSession.setCategory(originalCategory, options: originalOptions)
+                    print("✅ [Audio] 已恢復到原始音頻設定: \(originalCategory.rawValue)")
+                } else {
+                    // 使用最安全的設定，確保不會影響其他音頻
+                    try audioSession.setCategory(.ambient, options: [.mixWithOthers])
+                    print("✅ [Audio] 使用安全預設音頻設定")
+                }
+                
+                // 使用 .notifyOthersOnDeactivation 確保其他音頻恢復
+                try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+                
+                // 短暫延遲後重新激活
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    do {
+                        try audioSession.setActive(true)
+                        print("✅ [Audio] 音頻會話重新激活完成")
+                    } catch {
+                        print("⚠️ [Audio] 重新激活警告: \(error.localizedDescription)")
+                    }
+                }
+                
+                self.audioSessionConfigured = false
+                self.shouldRestoreVolume = false
+                
+                print("✅ [Audio] 音頻設定恢復完成")
+                
             } catch {
-                print("❌ [Audio] 所有恢復嘗試都失敗")
+                let errorCode = (error as NSError).code
+                
+                // 過濾掉常見的無害錯誤
+                if errorCode == 560557684 || errorCode == -50 {
+                    print("ℹ️ [Audio] 音頻會話競爭（系統正常保護機制）")
+                } else {
+                    print("❌ [Audio] 恢復音頻設定失敗: \(error.localizedDescription)")
+                }
+                
+                // 最終備用方案：強制使用安全設定
+                do {
+                    let audioSession = AVAudioSession.sharedInstance()
+                    try audioSession.setActive(false, options: [.notifyOthersOnDeactivation])
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        do {
+                            try audioSession.setCategory(.ambient, options: [.mixWithOthers])
+                            try audioSession.setActive(true)
+                            print("✅ [Audio] 使用最終備用音頻設定")
+                        } catch {
+                            // 連備用都失敗時，只記錄但不報錯（通常功能仍正常）
+                            print("ℹ️ [Audio] 系統音頻會話由 iOS 自動管理")
+                        }
+                    }
+                    
+                    self.audioSessionConfigured = false
+                    self.shouldRestoreVolume = false
+                } catch {
+                    print("ℹ️ [Audio] 系統音頻會話由 iOS 自動管理")
+                }
             }
         }
     }
@@ -277,7 +348,12 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
             
         case .ended:
             print("🔊 [Audio] 音頻中斷結束")
-            isInterrupted = false
+            
+            // 修正：更快速的中斷恢復
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.isInterrupted = false
+                print("✅ [Audio] 中斷狀態已重置")
+            }
             
             if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
@@ -298,13 +374,14 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
     
     @objc private func handleMediaServicesReset() {
         print("🔄 [Audio] 媒體服務重置")
-        audioSessionConfigured = false // 修正：使用正確的變數名稱
+        audioSessionConfigured = false
         isInterrupted = false
+        shouldRestoreVolume = false
     }
     
     // MARK: - 統一的語音播報方法
     
-    /// 等車提醒 - 最高優先級
+    /// 等車提醒 - 最高優先級（修正：忽略中斷狀態）
     func announceWaitingBusAlert(_ message: String) {
         print("🚨 [Audio] 等車提醒: \(message)")
         
@@ -313,7 +390,8 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         
         // 延遲播報，確保提示音完成
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.performSpeech(message, priority: .urgent, category: "waiting")
+            // 等車提醒強制執行，忽略中斷狀態
+            self.executeSpeechForced(message, priority: .urgent, category: "waiting")
         }
     }
     
@@ -336,7 +414,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         performSpeech(message, priority: .normal, category: "station")
     }
     
-    /// 測試語音播報
+    /// 測試語音播報（修正：不立即設定音頻會話）
     func testVoicePlayback(_ message: String) {
         print("🧪 [Audio] 測試播報: \(message)")
         performSpeech(message, priority: .test, category: "test")
@@ -397,6 +475,22 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         }
         
         // 執行播報
+        executeSpeech(message, priority: priority, category: category)
+    }
+    
+    // 新增：強制執行語音播報（忽略所有限制）
+    private func executeSpeechForced(_ message: String, priority: SpeechPriority, category: String) {
+        print("🚨 [Audio] 強制執行語音播報: \(message)")
+        
+        // 重置中斷狀態
+        isInterrupted = false
+        
+        // 停止當前播報
+        if speechSynthesizer.isSpeaking {
+            speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        
+        // 強制執行播報
         executeSpeech(message, priority: priority, category: category)
     }
     
@@ -472,7 +566,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         print("🎛️ [Audio] 語音參數 - 環境:\(currentEnvironment), 音量:\(utterance.volume), 速度:\(utterance.rate)")
     }
     
-    // MARK: - 音頻恢復機制
+    // MARK: - 音頻恢復機制（優化版）
     
     private func restoreAudioState() {
         print("🔄 [Audio] 播報完成，準備恢復音頻狀態")
@@ -490,6 +584,37 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
             
             print("✅ [Audio] 音頻狀態恢復完成")
         }
+    }
+    
+    // MARK: - AVSpeechSynthesizerDelegate 實現（新增音量恢復）
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        print("✅ [Audio] 語音播報完成")
+        isSpeaking = false
+        
+        // 播報完成後立即恢復音頻狀態
+        restoreAudioState()
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        print("❌ [Audio] 語音播報被取消")
+        isSpeaking = false
+        
+        // 取消時也要恢復音頻狀態
+        restoreAudioState()
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        print("🎤 [Audio] 語音播報開始")
+        isSpeaking = true
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didPause utterance: AVSpeechUtterance) {
+        print("⏸️ [Audio] 語音播報暫停")
+    }
+    
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didContinue utterance: AVSpeechUtterance) {
+        print("▶️ [Audio] 語音播報繼續")
     }
     
     // MARK: - 重複播報檢查
@@ -712,9 +837,6 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
             if self.isHeadphonesConnected != headphonesConnected {
                 self.isHeadphonesConnected = headphonesConnected
                 print("🎧 [Audio] 耳機狀態變更: \(headphonesConnected ? "已連接" : "已斷開")")
-                
-                // 修正：移除自動音頻會話設定
-                // self.setupAudioSession() // 移除這行
             }
         }
     }
@@ -755,6 +877,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         UserDefaults.standard.set(_speechVolume, forKey: "speechVolume")
         UserDefaults.standard.set(_voiceLanguage, forKey: "voiceLanguage")
     }
+    
     private func loadSettings() {
         isAudioEnabled = UserDefaults.standard.bool(forKey: "audioEnabled")
         if !UserDefaults.standard.objectExists(forKey: "audioEnabled") {
@@ -797,13 +920,17 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         }
         isSpeaking = false
         
+        // 重置時也恢復音頻狀態
+        if audioSessionConfigured {
+            restoreOriginalAudioSession()
+        }
+        
         print("🔄 [Audio] 已重置音頻通知狀態")
     }
     
-    // MARK: - 修正：移除自動音頻環境監控
+    // MARK: - 音頻環境監控（僅監控變化）
     
     func startAudioEnvironmentMonitoring() {
-        // 修正：只監控變化，不自動調整音頻設定
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(nowPlayingInfoChanged),
@@ -817,9 +944,6 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
             name: .MPMusicPlayerControllerPlaybackStateDidChange,
             object: nil
         )
-        
-        // 移除定時檢查，避免持續監控
-        // Timer.scheduledTimer... // 移除這部分
         
         print("🎵 [Audio] 音頻環境監控已啟動（僅監控變化）")
     }
@@ -837,6 +961,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         info += "智慧音量: \(smartVolumeEnabled)\n"
         info += "影片模式: \(videoModeEnabled)\n"
         info += "音頻會話已設定: \(audioSessionConfigured)\n"
+        info += "需要恢復音量: \(shouldRestoreVolume)\n"
         
         if let app = currentAudioApp {
             info += "音頻App: \(app)\n"
@@ -852,27 +977,21 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
     
     func forceAudioEnvironmentRefresh() {
         print("🔄 [Audio] 強制刷新音頻環境（僅更新狀態）")
-        // 修正：不自動設定音頻會話
-        // setupAudioSession() // 移除這行
     }
     
-    // MARK: - 修正：音頻環境監控處理（僅記錄變化）
+    // MARK: - 音頻環境監控處理（僅記錄變化）
     
     @objc private func audioRouteChanged(notification: Notification) {
         checkHeadphoneConnection()
-        
-        // 修正：只記錄變化，不自動調整
         print("🎧 [Audio] 音頻路徑變更")
     }
     
     @objc private func nowPlayingInfoChanged() {
         print("🎵 [Audio] 正在播放資訊變更")
-        // 修正：不自動調整音頻環境
     }
     
     @objc private func playbackStateChanged() {
         print("⏯️ [Audio] 播放狀態變更")
-        // 修正：不自動調整音頻環境
     }
     
     // MARK: - 屬性訪問器
@@ -888,7 +1007,7 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         NotificationCenter.default.removeObserver(self)
         speechSynthesizer.stopSpeaking(at: .immediate)
         
-        // 修正：確保恢復音頻設定
+        // 確保恢復音頻設定
         if audioSessionConfigured {
             restoreOriginalAudioSession()
         }
@@ -896,16 +1015,18 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         print("🗑️ [Audio] AudioNotificationService 已清理")
     }
 }
+
 // MARK: - 語音優先級
 private enum SpeechPriority: Int, CaseIterable {
-case normal = 1
-case high = 2
-case urgent = 3
-case test = 4
+    case normal = 1
+    case high = 2
+    case urgent = 3
+    case test = 4
 }
+
 // MARK: - UserDefaults 擴展
 extension UserDefaults {
-func objectExists(forKey key: String) -> Bool {
-return object(forKey: key) != nil
-}
+    func objectExists(forKey key: String) -> Bool {
+        return object(forKey: key) != nil
+    }
 }

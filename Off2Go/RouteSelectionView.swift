@@ -9,11 +9,20 @@ import SwiftUI
 
 struct RouteSelectionView: View {
     @StateObject private var tdxService = TDXService.shared
+    @StateObject private var waitingService = WaitingBusService.shared
+    @StateObject private var audioService = AudioNotificationService.shared
+    
     @State private var selectedCity = City.allCities[0]
     @State private var routes: [BusRoute] = []
     @State private var searchText = ""
     @State private var showingAlert = false
     @State private var isFirstLoad = true
+    
+    // 新增：導航功能的狀態
+    @State private var showingAudioSettings = false
+    @State private var showingAllWaitingManagement = false
+    @State private var showingFavorites = false
+    @State private var showingSettings = false
     
     @AppStorage("favoriteRoutes") private var favoriteRoutesData: Data = Data()
     @State private var favoriteRoutes: [BusRoute] = []
@@ -48,6 +57,147 @@ struct RouteSelectionView: View {
             }
             .navigationTitle("公車路線")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    // 目的地狀態指示器
+                    if audioService.currentDestination != nil {
+                        HStack(spacing: 2) {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("目的地")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(.green.opacity(0.2))
+                        )
+                    }
+                    
+                    // 等車提醒狀態指示器
+                    if waitingService.activeAlerts.count > 0 {
+                        Button(action: {
+                            showingAllWaitingManagement = true
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "bell.fill")
+                                    .foregroundColor(.orange)
+                                    .font(.caption)
+                                Text("\(waitingService.activeAlerts.count)")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(.orange.opacity(0.2))
+                            )
+                        }
+                    }
+                    
+                    // 收藏數量指示器
+                    if favoriteRoutes.count > 0 {
+                        Button(action: {
+                            showingFavorites = true
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "heart.fill")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Text("\(favoriteRoutes.count)")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(.red.opacity(0.2))
+                            )
+                        }
+                    }
+                    
+                    // 主選單
+                    Menu {
+                        // 快速導航區域
+                        Section("快速導航") {
+                            Button(action: {
+                                showingFavorites = true
+                            }) {
+                                Label("收藏路線 (\(favoriteRoutes.count))", systemImage: "heart.fill")
+                            }
+                            
+                            if waitingService.activeAlerts.count > 0 {
+                                Button(action: {
+                                    showingAllWaitingManagement = true
+                                }) {
+                                    Label("等車提醒 (\(waitingService.activeAlerts.count))", systemImage: "bell.fill")
+                                }
+                            } else {
+                                Text("無等車提醒")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        // 音頻與設定
+                        Section("音頻與設定") {
+                            Button(action: {
+                                showingAudioSettings = true
+                            }) {
+                                Label("語音設定", systemImage: "speaker.wave.2")
+                            }
+                            
+                            Button(action: {
+                                showingSettings = true
+                            }) {
+                                Label("應用程式設定", systemImage: "gear")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        // 目的地管理
+                        Section("目的地管理") {
+                            if let destination = audioService.currentDestination {
+                                Text("目前目的地：\(destination)")
+                                    .foregroundColor(.green)
+                                
+                                Button(action: {
+                                    audioService.clearDestination()
+                                }) {
+                                    Label("清除目的地", systemImage: "location.slash")
+                                }
+                            } else {
+                                Text("尚未設定目的地")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        // 等車提醒管理
+                        if waitingService.activeAlerts.count > 0 {
+                            Section("等車提醒管理") {
+                                Button(action: {
+                                    waitingService.clearAllAlerts()
+                                }) {
+                                    Label("清除全部提醒", systemImage: "trash")
+                                }
+                                .foregroundColor(.red)
+                            }
+                        }
+                        
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .foregroundColor(.blue)
+                            .font(.title3)
+                    }
+                }
+            }
             .refreshable {
                 await refreshData()
             }
@@ -79,10 +229,24 @@ struct RouteSelectionView: View {
             } message: {
                 Text(tdxService.errorMessage ?? "未知錯誤")
             }
+            // 各種 Sheet 展示
+            .sheet(isPresented: $showingAudioSettings) {
+                AudioSettingsView()
+            }
+            .sheet(isPresented: $showingAllWaitingManagement) {
+                AllWaitingAlertsManagementView()
+            }
+            .sheet(isPresented: $showingFavorites) {
+                FavoritesView()
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
         }
     }
     
-
+    // 其餘的方法保持不變...
+    // (cityPicker, searchBar, contentView 等等都保持原來的代碼)
     
     // 城市選擇器
     private var cityPicker: some View {

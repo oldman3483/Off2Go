@@ -10,7 +10,6 @@ import UserNotifications
 import Combine
 
 struct ContentView: View {
-    @State private var selectedTab = 0
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var audioService: AudioNotificationService
     
@@ -18,57 +17,25 @@ struct ContentView: View {
     @State private var cancellables = Set<AnyCancellable>()
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            RouteSelectionView()
-                .tabItem {
-                    VStack {
-                        Image(systemName: selectedTab == 0 ? "bus.fill" : "bus")
-                            .environment(\.symbolVariants, selectedTab == 0 ? .fill : .none)
-                        Text("路線")
-                    }
-                }
-                .tag(0)
-            
-            FavoritesView()
-                .tabItem {
-                    VStack {
-                        Image(systemName: selectedTab == 1 ? "star.fill" : "star")
-                            .environment(\.symbolVariants, selectedTab == 1 ? .fill : .none)
-                        Text("收藏")
-                    }
-                }
-                .tag(1)
-                .badge(getFavoritesCount())
-            
-            SettingsView()
-                .tabItem {
-                    VStack {
-                        Image(systemName: selectedTab == 2 ? "gear.circle.fill" : "gear.circle")
-                            .environment(\.symbolVariants, selectedTab == 2 ? .fill : .none)
-                        Text("設定")
-                    }
-                }
-                .tag(2)
-        }
-        .accentColor(.blue)
-        .onAppear {
-            setupInitialState()
-            setupPermissionMonitoring()
-        }
-        .alert("權限設定", isPresented: $showingPermissionAlert) {
-            Button("前往設定") {
-                openAppSettings()
+        RouteSelectionView()
+            .onAppear {
+                setupInitialState()
+                setupPermissionMonitoring()
             }
-            Button("稍後設定", role: .cancel) { }
-        } message: {
-            let (canUse, reason) = locationService.checkLocationServiceStatus()
-            
-            if !canUse {
-                Text("Off2Go 需要位置權限才能提供到站提醒功能。\n\n\(reason)")
-            } else {
-                Text("建議開啟通知權限以接收到站提醒。")
+            .alert("權限設定", isPresented: $showingPermissionAlert) {
+                Button("前往設定") {
+                    openAppSettings()
+                }
+                Button("稍後設定", role: .cancel) { }
+            } message: {
+                let (canUse, reason) = locationService.checkLocationServiceStatus()
+                
+                if !canUse {
+                    Text("Off2Go 需要位置權限才能提供到站提醒功能。\n\n\(reason)")
+                } else {
+                    Text("建議開啟通知權限以接收到站提醒。")
+                }
             }
-        }
     }
     
     // MARK: - 初始設定
@@ -145,17 +112,6 @@ struct ContentView: View {
     }
     
     private func setupAppearance() {
-        // 設置標籤欄外觀
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor.systemBackground
-        
-        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.systemBlue
-        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.systemBlue]
-        
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-        
         // 設置導航欄外觀
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
@@ -166,14 +122,6 @@ struct ContentView: View {
         UINavigationBar.appearance().standardAppearance = navAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
         UINavigationBar.appearance().compactAppearance = navAppearance
-    }
-    
-    private func getFavoritesCount() -> Int {
-        if let data = UserDefaults.standard.data(forKey: "favoriteRoutes"),
-           let routes = try? JSONDecoder().decode([BusRoute].self, from: data) {
-            return routes.count
-        }
-        return 0
     }
     
     private func openAppSettings() {

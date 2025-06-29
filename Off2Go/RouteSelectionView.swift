@@ -272,7 +272,6 @@ struct RouteSelectionView: View {
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundColor(selectedCity.id == city.id ? .white : .primary)
                                 
-                                // 路線數量顯示，使用動畫
                                 Group {
                                     if selectedCity.id == city.id && !routes.isEmpty {
                                         Text("\(routes.count) 條路線")
@@ -295,7 +294,9 @@ struct RouteSelectionView: View {
                             .background(
                                 RoundedRectangle(cornerRadius: 20)
                                     .fill(selectedCity.id == city.id ?
-                                          Color.blue : Color(.systemGray6))
+                                          LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                                          LinearGradient(colors: [Color(.systemGray6), Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .shadow(color: selectedCity.id == city.id ? .blue.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
                                     .animation(.easeInOut(duration: 0.3), value: selectedCity.id)
                             )
                         }
@@ -306,7 +307,13 @@ struct RouteSelectionView: View {
             }
         }
         .padding(.vertical, 12)
-        .background(Color(.systemGroupedBackground))
+        .background(
+            LinearGradient(
+                colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
     
     // 搜尋欄
@@ -332,7 +339,8 @@ struct RouteSelectionView: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(.systemGray6))
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         )
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
@@ -467,15 +475,28 @@ struct RouteSelectionView: View {
                 .listRowSeparator(.hidden)
                 .listRowBackground(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(.regularMaterial)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 2)
                         .padding(.vertical, 2)
                 )
-                // 交錯動畫效果
                 .opacity(tdxService.isLoading ? 0.3 : 1.0)
                 .animation(.easeInOut(duration: 0.3).delay(Double(index) * 0.05), value: tdxService.isLoading)
             }
         }
         .listStyle(PlainListStyle())
+        .background(
+            LinearGradient(
+                colors: [Color(.systemGroupedBackground), Color(.systemGray6).opacity(0.2)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
     
     // 城市選擇方法 - 添加動畫

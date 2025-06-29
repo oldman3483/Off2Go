@@ -51,7 +51,13 @@ struct RouteDetailView: View {
             }
             .padding(.horizontal, 16)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(
+                LinearGradient(
+                    colors: [Color(.systemGroupedBackground), Color(.systemGray6).opacity(0.2)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -243,7 +249,16 @@ struct RouteDetailView: View {
                         .font(.title2)
                         .foregroundColor(.white)
                         .frame(width: 40, height: 40)
-                        .background(Circle().fill(.blue))
+                        .background(
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.blue, .blue.opacity(0.7)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                        )
                     
                     Text(route.RouteName.Zh_tw)
                         .font(.title)
@@ -270,8 +285,9 @@ struct RouteDetailView: View {
                     
                     Spacer()
                     
-                    Image(systemName: "arrow.right.circle")
+                    Image(systemName: "arrow.right.circle.fill")
                         .foregroundColor(.blue)
+                        .font(.title3)
                         .rotationEffect(.degrees(selectedDirection == 0 ? 0 : 180))
                         .animation(.easeInOut(duration: 0.3), value: selectedDirection)
                     
@@ -293,8 +309,14 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 3)
         )
     }
     
@@ -303,7 +325,7 @@ struct RouteDetailView: View {
     private var directionSelectorCard: some View {
         VStack(spacing: 16) {
             HStack {
-                Image(systemName: "arrow.left.arrow.right.circle")
+                Image(systemName: "arrow.left.arrow.right.circle.fill")
                     .foregroundColor(.blue)
                     .font(.title3)
                 
@@ -341,7 +363,14 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         )
     }
     
@@ -416,7 +445,13 @@ struct RouteDetailView: View {
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(.blue.opacity(0.1))
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.blue.opacity(0.1), Color.blue.opacity(0.05)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
                         )
                     } else {
                         HStack {
@@ -434,14 +469,25 @@ struct RouteDetailView: View {
                                 audioService.toggleAudioNotifications()
                             }
                             .font(.caption2)
-                            .buttonStyle(.bordered)
-                            .controlSize(.mini)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(0.2))
+                            )
+                            .foregroundColor(.orange)
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(.orange.opacity(0.1))
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.orange.opacity(0.1), Color.orange.opacity(0.05)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
                         )
                     }
                     
@@ -493,14 +539,29 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(selectedDestinationIndex != nil ? .green.opacity(0.1) : .gray.opacity(0.1))
+                .fill(
+                    LinearGradient(
+                        colors: selectedDestinationIndex != nil ?
+                        [Color.green.opacity(0.08), Color.green.opacity(0.03)] :
+                        [Color(.systemGray6), Color(.systemGray5)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
-                            selectedDestinationIndex != nil ? .green.opacity(0.3) : .gray.opacity(0.3),
+                            LinearGradient(
+                                colors: selectedDestinationIndex != nil ?
+                                [Color.green.opacity(0.3), Color.green.opacity(0.1)] :
+                                [Color.gray.opacity(0.2), Color.gray.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
                             lineWidth: 1
                         )
                 )
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         )
     }
     
@@ -529,13 +590,21 @@ struct RouteDetailView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Capsule().fill(.orange.opacity(0.2)))
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.orange.opacity(0.2), Color.orange.opacity(0.1)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
                         .foregroundColor(.orange)
                 }
             }
             
             if !currentRouteAlerts.isEmpty {
-                // 顯示當前路線的等車提醒
                 ForEach(currentRouteAlerts) { alert in
                     HStack {
                         Image(systemName: "clock.fill")
@@ -556,18 +625,28 @@ struct RouteDetailView: View {
                             waitingService.removeWaitingAlert(alert)
                         }
                         .font(.caption2)
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color.red.opacity(0.1))
+                        )
+                        .foregroundColor(.red)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(.orange.opacity(0.1))
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.orange.opacity(0.08), Color.orange.opacity(0.03)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                     )
                 }
             } else {
-                // 沒有等車提醒時的說明
                 HStack {
                     Image(systemName: "hand.point.down.fill")
                         .foregroundColor(.blue)
@@ -590,14 +669,29 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(currentRouteAlerts.isEmpty ? .gray.opacity(0.1) : .orange.opacity(0.1))
+                .fill(
+                    LinearGradient(
+                        colors: currentRouteAlerts.isEmpty ?
+                        [Color(.systemGray6), Color(.systemGray5)] :
+                        [Color.orange.opacity(0.08), Color.orange.opacity(0.03)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
-                            currentRouteAlerts.isEmpty ? .gray.opacity(0.3) : .orange.opacity(0.3),
+                            LinearGradient(
+                                colors: currentRouteAlerts.isEmpty ?
+                                [Color.gray.opacity(0.2), Color.gray.opacity(0.1)] :
+                                [Color.orange.opacity(0.3), Color.orange.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
                             lineWidth: 1
                         )
                 )
+                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         )
     }
     
@@ -606,7 +700,7 @@ struct RouteDetailView: View {
     private var stopsListView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "list.bullet.circle")
+                Image(systemName: "list.bullet.circle.fill")
                     .foregroundColor(.purple)
                 
                 Text("站點列表")
@@ -620,7 +714,16 @@ struct RouteDetailView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Capsule().fill(.purple.opacity(0.2)))
+                        .background(
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.purple.opacity(0.2), Color.purple.opacity(0.1)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
                         .foregroundColor(.purple)
                 }
             }
@@ -645,6 +748,17 @@ struct RouteDetailView: View {
                         ) {
                             toggleDestination(index: index)
                         }
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.2)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
+                        )
                     }
                 }
             }
@@ -652,7 +766,14 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(.regularMaterial)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
         )
     }
     
@@ -1041,11 +1162,12 @@ struct DirectionButton: View {
             .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? .blue : .blue.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(isSelected ? .clear : .blue.opacity(0.3), lineWidth: 1)
+                    .fill(
+                        isSelected ?
+                        LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                        LinearGradient(colors: [Color(.systemGray6), Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
+                    .shadow(color: isSelected ? .blue.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())

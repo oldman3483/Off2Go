@@ -1,6 +1,6 @@
 //
 //  LaunchScreen.swift
-//  BusNotify
+//  Off2Go
 //
 //  Created by Heidie Lee on 2025/5/15.
 //
@@ -12,24 +12,45 @@ struct LaunchScreen: View {
         VStack {
             Spacer()
             
-            Image(systemName: "bus.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.blue)
-                .padding()
+            // 可愛的公車圖示
+            ZStack {
+                Circle()
+                    .fill(.blue.opacity(0.1))
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: "bus.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.blue)
+            }
+            .padding()
             
-            Text("BusNotify")
+            Text("公車來了")
                 .font(.largeTitle)
                 .fontWeight(.bold)
+                .foregroundColor(.primary)
             
-            Text("公車站點通知小幫手")
-                .font(.headline)
+            Text("Off2Go")
+                .font(.title3)
                 .foregroundColor(.secondary)
+            
+            Text("您的貼心搭車小助手")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
             
             Spacer()
             
             Text("v1.0.0")
                 .font(.caption)
+                .foregroundColor(.secondary)
                 .padding()
         }
+        .background(
+            LinearGradient(
+                colors: [.blue.opacity(0.1), .white],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }

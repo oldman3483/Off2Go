@@ -1,6 +1,6 @@
 //
 //  NotificationService.swift
-//  BusNotify
+//  Off2Go
 //
 //  Created by Heidie Lee on 2025/5/15.
 //

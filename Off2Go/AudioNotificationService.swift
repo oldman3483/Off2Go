@@ -385,26 +385,27 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
     func announceWaitingBusAlert(_ message: String) {
         print("🚨 [Audio] 等車提醒: \(message)")
         
-        // 立即播放系統提示音
-        AudioServicesPlaySystemSound(1007)
+        // 播放更有趣的提示音
+        AudioServicesPlaySystemSound(1016) // 使用更活潑的系統音效
         
-        // 延遲播報，確保提示音完成
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            // 等車提醒強制執行，忽略中斷狀態
-            self.executeSpeechForced(message, priority: .urgent, category: "waiting")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let friendlyMessage = "公車來了！\(message)"
+            self.performSpeech(friendlyMessage, priority: .urgent, category: "waiting")
         }
     }
     
     /// 到站提醒 - 高優先級
     func announceArrivalAlert(_ message: String) {
         print("🎯 [Audio] 到站提醒: \(message)")
-        performSpeech(message, priority: .high, category: "arrival")
+        let friendlyMessage = "到站了！\(message)"
+        performSpeech(friendlyMessage, priority: .high, category: "arrival")
     }
     
     /// 接近目的地 - 高優先級
     func announceApproachingDestination(_ message: String) {
         print("🔔 [Audio] 接近提醒: \(message)")
-        performSpeech(message, priority: .high, category: "approaching")
+        let friendlyMessage = "快到了！\(message)"
+        performSpeech(friendlyMessage, priority: .high, category: "approaching")
     }
     
     /// 一般站點資訊 - 普通優先級
@@ -845,16 +846,16 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         speechSynthesizer.delegate = self
     }
     
-    private func updateNowPlayingInfo(with status: String = "待機中") {
+    private func updateNowPlayingInfo(with status: String = "等車中") {
         var nowPlayingInfo = [String: Any]()
         
         if let destination = currentDestination {
-            nowPlayingInfo[MPMediaItemPropertyTitle] = "Off2Go 到站提醒"
+            nowPlayingInfo[MPMediaItemPropertyTitle] = "公車來了"
             nowPlayingInfo[MPMediaItemPropertyArtist] = destination
             nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = status
         } else {
-            nowPlayingInfo[MPMediaItemPropertyTitle] = "Off2Go"
-            nowPlayingInfo[MPMediaItemPropertyArtist] = "公車到站提醒"
+            nowPlayingInfo[MPMediaItemPropertyTitle] = "公車來了"
+            nowPlayingInfo[MPMediaItemPropertyArtist] = "準備搭車"
             nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = status
         }
         

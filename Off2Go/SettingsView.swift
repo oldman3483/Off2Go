@@ -25,7 +25,7 @@ struct SettingsView: View {
     @State private var showingAboutSheet = false
     @StateObject private var tdxService = TDXService.shared
         
-    @State private var showingAppIcon = false
+//    @State private var showingAppIcon = false
 
     
     var body: some View {
@@ -65,31 +65,31 @@ struct SettingsView: View {
             } message: {
                 Text("這將會重置所有設定為預設值，且無法復原。")
             }
-            .sheet(isPresented: $showingAppIcon) {
-                NavigationView {
-                    VStack(spacing: 30) {
-                        Text("App 圖示預覽")
-                            .font(.title)
-                            .fontWeight(.bold)
-                        
-                        // 顯示你的圖示，放大一點方便截圖
-                        SkyBlueAppIconView()
-                            .scaleEffect(2.0) // 放大 2 倍
-                            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                        
-                    }
-                    .padding()
-                    .navigationTitle("圖示預覽")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("完成") {
-                                showingAppIcon = false
-                            }
-                        }
-                    }
-                }
-            }
+//            .sheet(isPresented: $showingAppIcon) {
+//                NavigationView {
+//                    VStack(spacing: 30) {
+//                        Text("App 圖示預覽")
+//                            .font(.title)
+//                            .fontWeight(.bold)
+//                        
+//                        // 顯示你的圖示，放大一點方便截圖
+//                        SkyBlueAppIconView()
+//                            .scaleEffect(2.0) // 放大 2 倍
+//                            .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+//                        
+//                    }
+//                    .padding()
+//                    .navigationTitle("圖示預覽")
+//                    .navigationBarTitleDisplayMode(.inline)
+//                    .toolbar {
+//                        ToolbarItem(placement: .navigationBarTrailing) {
+//                            Button("完成") {
+//                                showingAppIcon = false
+//                            }
+//                        }
+//                    }
+//                }
+//            }
         }
     }
     
@@ -490,26 +490,26 @@ struct SettingsView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
-            Button(action: {
-                showingAppIcon = true
-            }) {
-                HStack {
-                    Image(systemName: "camera.viewfinder")
-                        .foregroundColor(.purple)
-                        .frame(width: 24)
-                    
-                    Text("預覽 App 圖示")
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
+//            Button(action: {
+//                showingAppIcon = true
+//            }) {
+//                HStack {
+//                    Image(systemName: "camera.viewfinder")
+//                        .foregroundColor(.purple)
+//                        .frame(width: 24)
+//                    
+//                    Text("預覽 App 圖示")
+//                        .font(.subheadline)
+//                        .foregroundColor(.primary)
+//                    
+//                    Spacer()
+//                    
+//                    Image(systemName: "chevron.right")
+//                        .font(.caption)
+//                        .foregroundColor(.secondary)
+//                }
+//            }
+//            .buttonStyle(PlainButtonStyle())
             
         } header: {
             Label("關於", systemImage: "info.circle.fill")

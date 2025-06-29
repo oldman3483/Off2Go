@@ -21,8 +21,17 @@ struct RouteDetailView: View {
     @State private var selectedDestinationIndex: Int?
     @State private var showingAudioSettings = false
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var showingAllWaitingManagement = false
     
     var body: some View {
+        
+        // 當前路線的等車提醒
+        let currentRouteAlerts = waitingService.activeAlerts.filter { alert in
+            stationService.stops.contains { $0.StopID == alert.stopID }
+        }
+        // 所有等車提醒的總數
+        let totalActiveAlerts = waitingService.activeAlerts.count
+        
         ScrollView {
             VStack(spacing: 16) {
                 // 路線信息卡片
@@ -46,37 +55,118 @@ struct RouteDetailView: View {
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                // 目的地狀態指示器
+                if selectedDestinationIndex != nil {
+                    HStack(spacing: 2) {
+                        Image(systemName: "location.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                        Text("目的地")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(.green.opacity(0.2))
+                    )
+                }
+                
+                // 全域等車提醒狀態指示器
+                if totalActiveAlerts > 0 {
+                    Button(action: {
+                        showingAllWaitingManagement = true
+                    }) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "bell.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text("\(totalActiveAlerts)")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(.orange.opacity(0.2))
+                        )
+                    }
+                }
+                
+                // 主選單
                 Menu {
+                    // 語音設定
                     Button(action: {
                         showingAudioSettings = true
                     }) {
                         Label("語音設定", systemImage: "speaker.wave.2")
                     }
                     
-                    if selectedDestinationIndex != nil {
-                        Button(action: {
-                            clearDestination()
-                        }) {
-                            Label("清除目的地", systemImage: "trash")
+                    Divider()
+                    
+                    // 目的地管理
+                    Section("目的地管理") {
+                        if selectedDestinationIndex != nil {
+                            Button(action: {
+                                clearDestination()
+                            }) {
+                                Label("清除目的地", systemImage: "location.slash")
+                            }
+                        } else {
+                            Text("尚未設定目的地")
+                                .foregroundColor(.secondary)
                         }
                     }
+                    
+                    // 等車提醒管理
+                    Section("等車提醒") {
+                        if totalActiveAlerts > 0 {
+                            Button(action: {
+                                showingAllWaitingManagement = true
+                            }) {
+                                Label("管理所有提醒 (\(totalActiveAlerts))", systemImage: "bell.badge")
+                            }
+                            
+                            // 如果當前路線有提醒，也可以單獨管理當前路線
+                            if !currentRouteAlerts.isEmpty {
+                                Button(action: {
+                                    // 使用過濾參數顯示當前路線的提醒
+                                    showingAllWaitingManagement = true
+                                }) {
+                                    Label("管理本路線提醒 (\(currentRouteAlerts.count))", systemImage: "bell")
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                waitingService.clearAllAlerts()
+                            }) {
+                                Label("清除全部提醒", systemImage: "trash")
+                            }
+                            .foregroundColor(.red)
+                        } else {
+                            Text("無等車提醒")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
                 } label: {
-                    HStack(spacing: 4) {
-                        if audioService.isAudioEnabled && selectedDestinationIndex != nil {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .foregroundColor(.blue)
-                                .font(.caption)
-                        }
-                        
-                        Image(systemName: "ellipsis.circle")
-                            .foregroundColor(.blue)
-                    }
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.blue)
                 }
             }
         }
+
+        // 在最後的修飾符部分，只需要這兩個 sheet
         .sheet(isPresented: $showingAudioSettings) {
             AudioSettingsView()
+        }
+        .sheet(isPresented: $showingAllWaitingManagement) {
+            AllWaitingAlertsManagementView() // 顯示所有等車提醒
         }
         .onAppear {
             stationService.setRoute(route, direction: selectedDirection)
@@ -418,24 +508,24 @@ struct RouteDetailView: View {
     
     @ViewBuilder
     private var waitingAlertsCard: some View {
-        let activeAlertsForRoute = waitingService.activeAlerts.filter { alert in
+        let currentRouteAlerts = waitingService.activeAlerts.filter { alert in
             stationService.stops.contains { $0.StopID == alert.stopID }
         }
         
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "bell.circle.fill")
-                    .foregroundColor(activeAlertsForRoute.isEmpty ? .gray : .orange)
+                    .foregroundColor(currentRouteAlerts.isEmpty ? .gray : .orange)
                     .font(.title3)
                 
-                Text("等車提醒")
+                Text("本路線等車提醒")
                     .font(.headline)
                     .fontWeight(.semibold)
                 
                 Spacer()
                 
-                if !activeAlertsForRoute.isEmpty {
-                    Text("\(activeAlertsForRoute.count) 個")
+                if !currentRouteAlerts.isEmpty {
+                    Text("\(currentRouteAlerts.count) 個")
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -444,9 +534,9 @@ struct RouteDetailView: View {
                 }
             }
             
-            if !activeAlertsForRoute.isEmpty {
-                // 顯示現有的等車提醒
-                ForEach(activeAlertsForRoute) { alert in
+            if !currentRouteAlerts.isEmpty {
+                // 顯示當前路線的等車提醒
+                ForEach(currentRouteAlerts) { alert in
                     HStack {
                         Image(systemName: "clock.fill")
                             .foregroundColor(.orange)
@@ -500,11 +590,11 @@ struct RouteDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(activeAlertsForRoute.isEmpty ? .gray.opacity(0.1) : .orange.opacity(0.1))
+                .fill(currentRouteAlerts.isEmpty ? .gray.opacity(0.1) : .orange.opacity(0.1))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(
-                            activeAlertsForRoute.isEmpty ? .gray.opacity(0.3) : .orange.opacity(0.3),
+                            currentRouteAlerts.isEmpty ? .gray.opacity(0.3) : .orange.opacity(0.3),
                             lineWidth: 1
                         )
                 )

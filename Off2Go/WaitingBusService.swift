@@ -51,9 +51,9 @@ class WaitingBusService: ObservableObject {
         activeAlerts.append(alert)
         saveActiveAlerts()
         
-        // 確認提醒設定成功
+        // 改用等車提醒的播報邏輯
         let confirmMessage = "已設定\(routeName) \(stopName)等車提醒，將在公車到站前\(alertMinutes)分鐘通知您"
-        audioService.testVoicePlayback(confirmMessage)
+        audioService.announceWaitingBusAlert(confirmMessage)
         
         print("✅ [WaitingBus] 新增等車提醒: \(routeName) - \(stopName) (提前\(alertMinutes)分鐘)")
     }
@@ -78,10 +78,10 @@ class WaitingBusService: ObservableObject {
         notifiedAlerts.remove(alert.id)
         saveActiveAlerts()
         
-        // 確認取消成功（僅在非自動移除時播放）
+        // 確認取消成功（僅在非自動移除時播放，且改用等車提醒的播報邏輯）
         if !isAutoRemoving {
             let cancelMessage = "已取消\(routeName) \(stopName)的等車提醒"
-            audioService.testVoicePlayback(cancelMessage)
+            audioService.announceWaitingBusAlert(cancelMessage)
         }
         
         print("🗑️ [WaitingBus] 移除等車提醒: \(routeName) - \(stopName)")
@@ -359,7 +359,8 @@ class WaitingBusService: ObservableObject {
         
         if count > 0 {
             let message = "已清除所有等車提醒"
-            audioService.testVoicePlayback(message)
+            // 改用等車提醒的播報邏輯
+            audioService.announceWaitingBusAlert(message)
         }
         
         print("🧹 [WaitingBus] 已清除所有等車提醒")

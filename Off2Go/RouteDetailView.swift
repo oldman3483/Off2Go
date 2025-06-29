@@ -36,6 +36,7 @@ struct RouteDetailView: View {
             VStack(spacing: 16) {
                 // 路線信息卡片
                 routeInfoCard
+                    .padding(.top, 16)
                 
                 // 方向選擇卡片
                 directionSelectorCard
@@ -51,13 +52,7 @@ struct RouteDetailView: View {
             }
             .padding(.horizontal, 16)
         }
-        .background(
-                LinearGradient(
-                    colors: [Color(.systemGroupedBackground), Color(.systemGray6).opacity(0.2)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+        .background(Color.white)
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -239,6 +234,17 @@ struct RouteDetailView: View {
         }
     }
     
+    // 統一的卡片樣式修飾符
+    private func cardStyle() -> some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(.systemGray4), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+    }
+    
     // MARK: - 路線信息卡片
     
     private var routeInfoCard: some View {
@@ -307,17 +313,7 @@ struct RouteDetailView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: .black.opacity(0.08), radius: 6, x: 0, y: 3)
-        )
+        .background(cardStyle())
     }
     
     // MARK: - 方向選擇卡片
@@ -361,17 +357,7 @@ struct RouteDetailView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.2)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
+        .background(cardStyle())
     }
     
     // MARK: - 目的地狀態卡片
@@ -537,32 +523,7 @@ struct RouteDetailView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: selectedDestinationIndex != nil ?
-                        [Color.green.opacity(0.08), Color.green.opacity(0.03)] :
-                        [Color(.systemGray6), Color(.systemGray5)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: selectedDestinationIndex != nil ?
-                                [Color.green.opacity(0.3), Color.green.opacity(0.1)] :
-                                [Color.gray.opacity(0.2), Color.gray.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
+        .background(cardStyle())
     }
     
     // MARK: - 等車提醒卡片
@@ -667,32 +628,7 @@ struct RouteDetailView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: currentRouteAlerts.isEmpty ?
-                        [Color(.systemGray6), Color(.systemGray5)] :
-                        [Color.orange.opacity(0.08), Color.orange.opacity(0.03)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            LinearGradient(
-                                colors: currentRouteAlerts.isEmpty ?
-                                [Color.gray.opacity(0.2), Color.gray.opacity(0.1)] :
-                                [Color.orange.opacity(0.3), Color.orange.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
+        .background(cardStyle())
     }
     
     // MARK: - 站點列表
@@ -764,17 +700,7 @@ struct RouteDetailView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(.systemBackground), Color(.systemGray6).opacity(0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: .black.opacity(0.06), radius: 6, x: 0, y: 3)
-        )
+        .background(cardStyle())
     }
     
     // MARK: - 目的地設定方法

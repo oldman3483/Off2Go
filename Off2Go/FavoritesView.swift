@@ -233,10 +233,6 @@ struct FavoritesView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.orange)
-                        
-                        Text("• 向左滑動可以快速移除收藏\n• 點擊路線可查看詳細資訊並開始監控")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 8)
                     .listRowBackground(Color.clear)

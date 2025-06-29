@@ -1,15 +1,12 @@
 //
-//  SceneDelegate.swift
+//  SceneDelegate.swift - 簡化版
 //  Off2Go
-//
-//  Created by Heidie Lee on 2025/5/15.
 //
 
 import UIKit
 import SwiftUI
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-    
     var window: UIWindow?
     
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
@@ -17,21 +14,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         let contentView = ContentView()
             .environmentObject(LocationService.shared)
+            .environmentObject(AudioNotificationService.shared)
         
-        // 創建主窗口
-        let window = UIWindow(windowScene: windowScene)
-        window.rootViewController = UIHostingController(rootView: contentView)
-        self.window = window
-        window.makeKeyAndVisible()
+        window = UIWindow(windowScene: windowScene)
+        window?.rootViewController = UIHostingController(rootView: contentView)
+        window?.makeKeyAndVisible()
     }
     
+    // 其他方法保持空實現即可
     func sceneDidDisconnect(_ scene: UIScene) {}
-    
     func sceneDidBecomeActive(_ scene: UIScene) {}
-    
     func sceneWillResignActive(_ scene: UIScene) {}
-    
     func sceneWillEnterForeground(_ scene: UIScene) {}
-    
     func sceneDidEnterBackground(_ scene: UIScene) {}
 }

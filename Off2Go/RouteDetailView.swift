@@ -52,7 +52,7 @@ struct RouteDetailView: View {
             }
             .padding(.horizontal, 16)
         }
-        .background(Color.white)
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -237,12 +237,8 @@ struct RouteDetailView: View {
     // 統一的卡片樣式修飾符
     private func cardStyle() -> some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.white)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(.systemGray4), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .shadow(color: .primary.opacity(0.1), radius: 3, x: 0, y: 2)
     }
     
     // MARK: - 路線信息卡片
@@ -981,14 +977,8 @@ struct SimpleStopRowView: View {
             .padding(.horizontal, 16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isDestination ? .green.opacity(0.1) : .clear)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(
-                                isDestination ? .green.opacity(0.3) : .clear,
-                                lineWidth: 1
-                            )
-                    )
+                    .fill(Color(.secondarySystemGroupedBackground))
+                    .shadow(color: .primary.opacity(0.05), radius: 2, x: 0, y: 1)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -1090,17 +1080,17 @@ struct DirectionButton: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(
                         isSelected ?
-                        LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                        LinearGradient(colors: [Color(.systemGray6), Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        AnyShapeStyle(LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)) :
+                        AnyShapeStyle(Color(.secondarySystemGroupedBackground))
                     )
-                    .shadow(color: isSelected ? .blue.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
+                    .shadow(color: isSelected ? .blue.opacity(0.3) : .primary.opacity(0.05), radius: 4, x: 0, y: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
     }
 }
 
-                                // MARK: - 收藏按鈕元件
+// MARK: - 收藏按鈕元件
 
 struct FavoriteButton: View {
     let route: BusRoute

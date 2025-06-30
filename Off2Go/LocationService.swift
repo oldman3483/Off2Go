@@ -233,12 +233,9 @@ class LocationService: NSObject, ObservableObject {
         if currentStatus == .authorizedAlways {
             DispatchQueue.global(qos: .userInitiated).async {
                 DispatchQueue.main.async {
-                    do {
-                        self.locationManager.allowsBackgroundLocationUpdates = true
-                        print("✅ [Location] 啟用背景位置更新")
-                    } catch {
-                        print("⚠️ [Location] 無法啟用背景位置更新: \(error.localizedDescription)")
-                    }
+                    
+                    self.locationManager.allowsBackgroundLocationUpdates = true
+                    print("✅ [Location] 啟用背景位置更新")
                     self.locationManager.startUpdatingLocation()
                 }
             }

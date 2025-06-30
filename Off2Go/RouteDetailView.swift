@@ -181,7 +181,7 @@ struct RouteDetailView: View {
             stationService.preloadFrequentRoutes()
 
         }
-        .onChange(of: selectedDirection) { newDirection in
+        .compatibleOnChange(of: selectedDirection) { newDirection in
             print("🔄 [RouteDetail] === 方向切換觸發（快速版）===")
             
             // 立即更新 UI 狀態
@@ -193,7 +193,7 @@ struct RouteDetailView: View {
             // 無延遲直接設定
             stationService.setRoute(route, direction: newDirection)
         }
-        .onChange(of: locationService.currentLocation) { location in
+        .compatibleOnChange(of: locationService.currentLocation) { location in
             if let location = location, selectedDestinationIndex != nil {
                 // 檢查是否接近目的地，並使用強化的語音播報
                 checkDestinationProximityWithEnhancedAlert(location: location)
@@ -1127,7 +1127,7 @@ struct FavoriteButton: View {
         .onAppear {
             loadFavoriteRoutes()
         }
-        .onChange(of: favoriteRoutesData) { _ in
+        .compatibleOnChange(of: favoriteRoutesData) { _ in
             loadFavoriteRoutes()
         }
     }

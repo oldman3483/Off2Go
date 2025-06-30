@@ -661,10 +661,6 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         stopLocationTracking()
         LocationService.shared.startUpdatingLocation()
         
-        locationTrackingTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            self?.checkLocationForDestination()
-        }
-        
         isTrackingActive = true
         print("📍 [Audio] 已開始位置追蹤")
     }
@@ -675,15 +671,6 @@ class AudioNotificationService: NSObject, ObservableObject, AVSpeechSynthesizerD
         isTrackingActive = false
         LocationService.shared.stopUpdatingLocation()
         print("🛑 [Audio] 已停止位置追蹤")
-    }
-    
-    private func checkLocationForDestination() {
-        guard let targetStop = destinationStop,
-              let userLocation = LocationService.shared.currentLocation else {
-            return
-        }
-        
-        print("📍 [Audio] 檢查位置：距離目的地計算中...")
     }
     
     func checkDestinationProximity(currentStops: [BusStop.Stop], userLocation: CLLocation) {

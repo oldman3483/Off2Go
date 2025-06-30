@@ -63,7 +63,7 @@ struct FavoritesView: View {
                 print("🔄 [Favorites] onAppear 觸發")
                 loadFavoritesFromUserDefaults()
             }
-            .onChange(of: favoriteRoutesData) { _ in
+            .compatibleOnChange(of: favoriteRoutesData) {
                 print("🔄 [Favorites] AppStorage 數據變更，重新載入")
                 loadFavoritesFromUserDefaults()
             }

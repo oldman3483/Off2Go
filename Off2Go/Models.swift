@@ -138,13 +138,24 @@ struct City: Identifiable {
 
 // MARK: - 等車提醒模型
 struct WaitingBusAlert: Codable, Identifiable {
-    let id = UUID()
+    let id: UUID
     let routeName: String
     let stopName: String
     let stopID: String
     let direction: Int
     let createdTime: Date
     let alertMinutes: Int // 提前幾分鐘提醒
+    
+    // 主要的初始化方法
+    init(routeName: String, stopName: String, stopID: String, direction: Int, alertMinutes: Int) {
+        self.id = UUID()
+        self.routeName = routeName
+        self.stopName = stopName
+        self.stopID = stopID
+        self.direction = direction
+        self.createdTime = Date()
+        self.alertMinutes = alertMinutes
+    }
     
     var isActive: Bool {
         // 等車提醒有效期限（例如30分鐘）

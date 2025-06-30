@@ -44,7 +44,6 @@ class WaitingBusService: ObservableObject {
             stopName: stopName,
             stopID: stopID,
             direction: direction,
-            createdTime: Date(),
             alertMinutes: alertMinutes
         )
         

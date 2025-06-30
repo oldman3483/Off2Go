@@ -54,6 +54,10 @@ struct RouteSelectionView: View {
                         .animation(.easeInOut(duration: 0.3), value: tdxService.isLoading)
                         .animation(.easeInOut(duration: 0.3), value: routes.count)
                 }
+                // 橫幅廣告 - 放在底部不干擾主要內容
+                SmartBannerAdView()
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
             }
             .navigationTitle("公車路線")
             .navigationBarTitleDisplayMode(.large)

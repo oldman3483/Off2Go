@@ -45,6 +45,10 @@ struct FavoritesView: View {
                     }
                 }
             }
+            // 橫幅廣告 - 新增
+            SmartBannerAdView()
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             .navigationTitle("收藏路線")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {

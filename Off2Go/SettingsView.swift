@@ -40,6 +40,10 @@ struct SettingsView: View {
                 // 顯示設定
                 displaySection
                 
+                // 廣告設定
+                adSettingsSection
+                
+                
                 // 權限管理
                 permissionsSection
                 
@@ -417,6 +421,58 @@ struct SettingsView: View {
             
         } header: {
             Label("數據與隱私", systemImage: "shield.fill")
+        }
+    }
+    
+    private var adSettingsSection: some View {
+        Section {
+            // 廣告顯示開關
+            HStack {
+                Image(systemName: "rectangle.and.hand.point.up.left.fill")
+                    .foregroundColor(.blue)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("顯示橫幅廣告")
+                        .font(.subheadline)
+                    Text("支持 Off2Go 的持續發展")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Toggle("", isOn: Binding(
+                    get: { AdMobManager.shared.showAds },
+                    set: { _ in AdMobManager.shared.toggleAds() }
+                ))
+                .labelsHidden()
+            }
+            
+            // 顯示廣告狀態
+            if AdMobManager.shared.isAdFreeActive {
+                HStack {
+                    Image(systemName: "gift.fill")
+                        .foregroundColor(.purple)
+                        .frame(width: 24)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("廣告免費期間")
+                            .font(.subheadline)
+                            .foregroundColor(.purple)
+                        Text("感謝您的支持！")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+            }
+            
+        } header: {
+            Label("廣告設定", systemImage: "rectangle.and.hand.point.up.left")
+        } footer: {
+            Text("感謝您支持 Off2Go！廣告收入幫助我們提供免費的公車資訊服務。")
         }
     }
     

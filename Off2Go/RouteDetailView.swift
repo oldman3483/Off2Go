@@ -53,6 +53,11 @@ struct RouteDetailView: View {
             .padding(.horizontal, 16)
         }
         .background(Color(.systemGroupedBackground))
+        // 橫幅廣告 - 放在底部
+                SmartBannerAdView()
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+        
         .navigationTitle(route.RouteName.Zh_tw)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {

@@ -7,18 +7,21 @@
 
 import SwiftUI
 import UserNotifications
+import GoogleMobileAds
 
 @main
 struct Off2GoApp: App {
     // 创建共享的服务实例
     @StateObject private var locationService = LocationService.shared
     @StateObject private var audioService = AudioNotificationService.shared
+    @StateObject private var adMobManager = AdMobManager.shared
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(locationService)
                 .environmentObject(audioService)
+                .environmentObject(adMobManager)
                 .onAppear {
                     // 請求權限
                     locationService.requestLocationPermission()

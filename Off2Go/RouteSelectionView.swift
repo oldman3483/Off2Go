@@ -476,6 +476,10 @@ struct RouteSelectionView: View {
                         toggleFavorite(route)
                     }
                 }
+                .onTapGesture {
+                    // 點擊時立即預載入該路線站點
+                    preloadRouteStops(route)
+                }
                 .listRowSeparator(.hidden)
                 .listRowBackground(
                     RoundedRectangle(cornerRadius: 12)
@@ -501,6 +505,18 @@ struct RouteSelectionView: View {
                 endPoint: .bottom
             )
         )
+    }
+    
+    // 預載入方法
+    private func preloadRouteStops(_ route: BusRoute) {
+        let city = selectedCity.id
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            tdxService.getStops(city: city, routeName: route.RouteID) { _, _ in
+                // 預載入，結果會被 StationService 的快取機制使用
+                print("📦 [RouteSelection] 預載入路線站點: \(route.RouteName.Zh_tw)")
+            }
+        }
     }
     
     // 城市選擇方法 - 添加動畫
@@ -602,7 +618,7 @@ struct RouteRowView: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // 路線號碼
+            // 路線號碼 - 移除 ID 顯示
             Text(route.RouteName.Zh_tw)
                 .font(.title2)
                 .fontWeight(.bold)

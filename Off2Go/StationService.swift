@@ -26,17 +26,20 @@ class StationService: ObservableObject {
     private var arrivalCache: [String: [BusArrival]] = [:] // RouteID -> 到站時間陣列
     private var lastArrivalFetchTime: [String: Date] = [:] // RouteID -> 最後到站時間請求時間
     
-    private let cacheValidDuration: TimeInterval = 1800 // 30分鐘站點快取
-    private let arrivalCacheValidDuration: TimeInterval = 45 // 45秒到站時間快取
-    private let minimumFetchInterval: TimeInterval = 20 // 20秒最小請求間隔
+    private let cacheValidDuration: TimeInterval = 900
+    private let arrivalCacheValidDuration: TimeInterval = 45
+    private let minimumFetchInterval: TimeInterval = 10
     
     // 新增：全域請求控制（避免多個 StationService 實例同時請求）
     private static var globalLastRequestTime: Date?
-    private static let globalMinimumInterval: TimeInterval = 10 // 全域10秒間隔
+    private static let globalMinimumInterval: TimeInterval = 10
     private static var activeRequests: Set<String> = [] // 正在進行的請求
     
     private var arrivalUpdateTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    
+    private var preloadingRoutes: Set<String> = []
+
     
     deinit {
         stopArrivalUpdates()
@@ -300,70 +303,105 @@ class StationService: ObservableObject {
     // MARK: - 獲取站點資料（添加防重複請求）
     
     private func fetchStops() {
-        guard let route = selectedRoute else {
-            errorMessage = "沒有選擇路線"
-            return
-        }
-        
-        // 修改請求間隔控制：降低最小間隔避免過度限制
-        if let lastFetch = lastFetchTime[route.RouteID],
-           Date().timeIntervalSince(lastFetch) < 5.0 {  // 降低為5秒
-            print("⚠️ [Station] 最近才請求過站點資料，跳過重複請求")
-            return
-        }
-        
-        print("🔄 [Station] === 開始獲取站點資料 ===")
-        print("   路線: \(route.RouteName.Zh_tw)")
-        print("   RouteID: \(route.RouteID)")
-        print("   方向: \(selectedDirection)")
-        
-        isLoading = true
-        errorMessage = nil
-        
-        let city = determineCityFromRoute()
-        
-        // 記錄請求時間（防止重複請求）
-        lastFetchTime[route.RouteID] = Date()
-        
-        tdxService.getStops(city: city, routeName: route.RouteID) { [weak self] busStops, error in
-            guard let self = self else { return }
+            guard let route = selectedRoute else {
+                errorMessage = "沒有選擇路線"
+                return
+            }
             
-            DispatchQueue.main.async {
-                self.isLoading = false
+            // 減少請求間隔限制
+            if let lastFetch = lastFetchTime[route.RouteID],
+               Date().timeIntervalSince(lastFetch) < 2.0 {  // 從 5.0 改為 2.0
+                print("⚠️ [Station] 最近才請求過站點資料，跳過重複請求")
+                return
+            }
+            
+            print("🔄 [Station] === 開始獲取站點資料（快速版）===")
+            print("   路線: \(route.RouteName.Zh_tw)")
+            print("   RouteID: \(route.RouteID)")
+            
+            isLoading = true
+            errorMessage = nil
+            
+            let city = determineCityFromRoute()
+            
+            // 記錄請求時間
+            lastFetchTime[route.RouteID] = Date()
+            
+            tdxService.getStops(city: city, routeName: route.RouteID) { [weak self] busStops, error in
+                guard let self = self else { return }
                 
-                if let error = error {
-                    self.errorMessage = "獲取站點失敗: \(error.localizedDescription)"
-                    print("❌ [Station] \(self.errorMessage!)")
-                    return
-                }
-                
-                guard let stopsData = busStops, !stopsData.isEmpty else {
-                    self.errorMessage = "無站點資料"
-                    print("❌ [Station] 無站點資料")
-                    return
-                }
-                
-                // 快取站點資料
-                self.cacheStops(stopsData, for: route.RouteID)
-                
-                // 找到匹配的路線
-                guard let busStop = self.selectCorrectRouteByDirection(stopsData, route: route, direction: self.selectedDirection) else {
-                    self.errorMessage = "找不到匹配方向 \(self.selectedDirection) 的路線資料"
-                    print("❌ [Station] 找不到匹配方向 \(self.selectedDirection) 的路線資料")
-                    return
-                }
-                
-                // 處理站點順序
-                let processedStops = self.processStopsByDirection(busStop.Stops, direction: self.selectedDirection)
-                
-                if processedStops.isEmpty {
-                    self.errorMessage = "該方向暫無站點資料"
-                } else {
-                    self.stops = processedStops
-                    print("✅ [Station] 載入完成：\(processedStops.count) 個站點")
+                DispatchQueue.main.async {
+                    self.isLoading = false
                     
-                    // 開始定期更新到站時間
+                    if let error = error {
+                        self.errorMessage = "獲取站點失敗: \(error.localizedDescription)"
+                        print("❌ [Station] \(self.errorMessage!)")
+                        return
+                    }
+                    
+                    guard let stopsData = busStops, !stopsData.isEmpty else {
+                        self.errorMessage = "無站點資料"
+                        print("❌ [Station] 無站點資料")
+                        return
+                    }
+                    
+                    // 快取站點資料
+                    self.cacheStops(stopsData, for: route.RouteID)
+                    
+                    // 快速處理站點
+                    self.processStopsData(stopsData)
+                }
+            }
+        }
+    
+    // 快速處理站點資料的方法
+        private func processStopsData(_ stopsData: [BusStop]) {
+            guard let route = selectedRoute else { return }
+            
+            guard let busStop = selectCorrectRouteByDirection(stopsData, route: route, direction: selectedDirection) else {
+                errorMessage = "找不到匹配方向 \(selectedDirection) 的路線資料"
+                return
+            }
+            
+            let processedStops = processStopsByDirection(busStop.Stops, direction: selectedDirection)
+            
+            if processedStops.isEmpty {
+                errorMessage = "該方向暫無站點資料"
+            } else {
+                stops = processedStops
+                print("✅ [Station] 快速載入完成：\(processedStops.count) 個站點")
+                
+                // 延遲載入到站時間，不阻塞站點顯示
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     self.startArrivalUpdates()
+                }
+            }
+        }
+        
+        // 預載入常用路線站點的方法
+    func preloadFrequentRoutes() {
+        // 從收藏路線中預載入
+        guard let favoriteData = UserDefaults.standard.data(forKey: "favoriteRoutes"),
+              let favoriteRoutes = try? JSONDecoder().decode([BusRoute].self, from: favoriteData) else {
+            return
+        }
+        
+        let city = UserDefaults.standard.string(forKey: "selectedCity") ?? "Taipei"
+        
+        for route in favoriteRoutes.prefix(3) { // 只預載入前3個收藏
+            if !preloadingRoutes.contains(route.RouteID) && stopsCache[route.RouteID] == nil {
+                preloadingRoutes.insert(route.RouteID)
+                
+                print("📦 [Station] 預載入路線站點: \(route.RouteName.Zh_tw)")
+                
+                tdxService.getStops(city: city, routeName: route.RouteID) { [weak self] stopsData, error in
+                    guard let self = self, let stopsData = stopsData else { return }
+                    
+                    DispatchQueue.main.async {
+                        self.cacheStops(stopsData, for: route.RouteID)
+                        self.preloadingRoutes.remove(route.RouteID)
+                        print("✅ [Station] 預載入完成: \(route.RouteName.Zh_tw)")
+                    }
                 }
             }
         }

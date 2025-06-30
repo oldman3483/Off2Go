@@ -177,20 +177,20 @@ struct RouteDetailView: View {
         .onAppear {
             stationService.setRoute(route, direction: selectedDirection)
             syncDestinationState()
+            
+            stationService.preloadFrequentRoutes()
+
         }
         .onChange(of: selectedDirection) { newDirection in
-            print("🔄 [RouteDetail] === 方向切換觸發 ===")
-            print("   從方向 \(selectedDirection) 切換到 \(newDirection)")
+            print("🔄 [RouteDetail] === 方向切換觸發（快速版）===")
             
-            // 清除目的地選擇（不同方向站點可能不同）
+            // 立即更新 UI 狀態
             if selectedDestinationIndex != nil {
-                print("🗑️ [RouteDetail] 清除目的地選擇（方向切換）")
                 selectedDestinationIndex = nil
                 audioService.clearDestination()
             }
             
-            // 強制重新設定路線和方向
-            print("🔄 [RouteDetail] 強制重新載入站點資料")
+            // 無延遲直接設定
             stationService.setRoute(route, direction: newDirection)
         }
         .onChange(of: locationService.currentLocation) { location in

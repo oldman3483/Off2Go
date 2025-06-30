@@ -30,7 +30,7 @@ class TDXService: ObservableObject {
     
     // 請求頻率控制
     private var lastRequestTime: Date?
-    private let minimumRequestInterval: TimeInterval = 3.0
+    private let minimumRequestInterval: TimeInterval = 1.0
     private var requestQueue = DispatchQueue(label: "TDXRequestQueue", qos: .userInitiated)
 
     private init() {
@@ -39,7 +39,7 @@ class TDXService: ObservableObject {
     
     // 請求計數器（避免超過每分鐘20次）
     private var requestTimes: [Date] = []
-    private let maxRequestsPerMinute = 18 // 設為18次，留點緩衝
+    private let maxRequestsPerMinute = 19 // 設為18次，留點緩衝
     
     // MARK: - Token管理
     
@@ -115,45 +115,44 @@ class TDXService: ObservableObject {
     
     // MARK: - 核心請求方法
        
-       private func performThrottledRequest<T: Decodable>(url: URL, completion: @escaping (T?, Error?) -> Void) {
-           requestQueue.async { [weak self] in
-               guard let self = self else { return }
-               
-               // 清理一分鐘前的請求記錄
-               let oneMinuteAgo = Date().addingTimeInterval(-60)
-               self.requestTimes = self.requestTimes.filter { $0 > oneMinuteAgo }
-               
-               // 檢查是否超過每分鐘限制
-               if self.requestTimes.count >= self.maxRequestsPerMinute {
-                   let waitTime = 60 - Date().timeIntervalSince(self.requestTimes.first!)
-                   print("⏳ [TDX] 每分鐘請求限制，等待 \(Int(waitTime)) 秒")
-                   Thread.sleep(forTimeInterval: waitTime + 1)
-                   
-                   // 重新清理
-                   let newOneMinuteAgo = Date().addingTimeInterval(-60)
-                   self.requestTimes = self.requestTimes.filter { $0 > newOneMinuteAgo }
-               }
-               
-               // 檢查請求間隔
-               let now = Date()
-               if let lastRequest = self.lastRequestTime {
-                   let timeSinceLastRequest = now.timeIntervalSince(lastRequest)
-                   if timeSinceLastRequest < self.minimumRequestInterval {
-                       let waitTime = self.minimumRequestInterval - timeSinceLastRequest
-                       print("⏳ [TDX] 請求間隔控制，等待 \(waitTime) 秒")
-                       Thread.sleep(forTimeInterval: waitTime)
-                   }
-               }
-               
-               // 記錄請求時間
-               self.requestTimes.append(Date())
-               self.lastRequestTime = Date()
-               
-               DispatchQueue.main.async {
-                   self.performRequestWithRetry(url: url, retryCount: 0, completion: completion)
-               }
-           }
-       }
+    private func performThrottledRequest<T: Decodable>(url: URL, completion: @escaping (T?, Error?) -> Void) {
+            requestQueue.async { [weak self] in
+                guard let self = self else { return }
+                
+                // 清理一分鐘前的請求記錄
+                let oneMinuteAgo = Date().addingTimeInterval(-60)
+                self.requestTimes = self.requestTimes.filter { $0 > oneMinuteAgo }
+                
+                // 檢查是否超過每分鐘限制
+                if self.requestTimes.count >= self.maxRequestsPerMinute {
+                    let waitTime = 5.0  // 固定等待5秒，而非計算剩餘時間
+                    print("⏳ [TDX] 每分鐘請求限制，等待 \(Int(waitTime)) 秒")
+                    Thread.sleep(forTimeInterval: waitTime)
+                    
+                    // 重新清理
+                    let newOneMinuteAgo = Date().addingTimeInterval(-60)
+                    self.requestTimes = self.requestTimes.filter { $0 > newOneMinuteAgo }
+                }
+                
+                // 檢查請求間隔
+                let now = Date()
+                if let lastRequest = self.lastRequestTime {
+                    let timeSinceLastRequest = now.timeIntervalSince(lastRequest)
+                    if timeSinceLastRequest < self.minimumRequestInterval {
+                        let waitTime = self.minimumRequestInterval - timeSinceLastRequest
+                        Thread.sleep(forTimeInterval: waitTime)
+                    }
+                }
+                
+                // 記錄請求時間
+                self.requestTimes.append(Date())
+                self.lastRequestTime = Date()
+                
+                DispatchQueue.main.async {
+                    self.performRequestWithRetry(url: url, retryCount: 0, completion: completion)
+                }
+            }
+        }
        
        private func performRequestWithRetry<T: Decodable>(url: URL, retryCount: Int, completion: @escaping (T?, Error?) -> Void) {
            DispatchQueue.main.async {
@@ -313,141 +312,122 @@ class TDXService: ObservableObject {
            }
        }
        
-       func getStops(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
-           print("🛑 [TDX] === 獲取站點資料 ===")
-           print("   城市: \(city)")
-           print("   路線ID: \(routeName)")
-           
-           // 嘗試多種方法獲取站點
-           tryGetStopsMethod1(city: city, routeName: routeName, completion: completion)
-       }
-       
-       // 方法1：使用 DisplayStopOfRoute API - 修改版
-    private func tryGetStopsMethod1(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
-        // 移除 $orderby 參數，因為某些端點不支援
-        let urlString = "\(baseURL)/DisplayStopOfRoute/City/\(city)/\(routeName)?$format=JSON"
+    func getStops(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
+        print("🛑 [TDX] === 獲取站點資料（多重策略版）===")
+        print("   城市: \(city)")
+        print("   路線識別: \(routeName)")
+        
+        // 策略1：使用 DisplayStopOfRoute + RouteID
+        tryGetStopsWithDisplayRoute(city: city, routeIdentifier: routeName, isRouteID: true, completion: completion)
+    }
+
+    // 策略1：DisplayStopOfRoute + RouteID
+    private func tryGetStopsWithDisplayRoute(city: String, routeIdentifier: String, isRouteID: Bool, completion: @escaping ([BusStop]?, Error?) -> Void) {
+        let urlString = "\(baseURL)/DisplayStopOfRoute/City/\(city)/\(routeIdentifier)?$format=JSON"
         
         guard let url = URL(string: urlString) else {
-            tryGetStopsMethod2(city: city, routeName: routeName, completion: completion)
+            if isRouteID {
+                // RouteID 失敗，嘗試用 RouteName
+                tryGetStopsWithRouteName(city: city, routeID: routeIdentifier, completion: completion)
+            } else {
+                completion([], NSError(domain: "TDX", code: -1, userInfo: [NSLocalizedDescriptionKey: "無效 URL"]))
+            }
             return
         }
         
-        print("🔍 [TDX] 方法1 - DisplayStopOfRoute: \(urlString)")
+        print("🔍 [TDX] 策略\(isRouteID ? "1" : "2") - \(isRouteID ? "RouteID" : "RouteName"): \(urlString)")
         
         performThrottledRequest(url: url) { (result: [BusStop]?, error: Error?) in
             if let error = error {
-                print("❌ [TDX] 方法1失敗: \(error.localizedDescription)")
-                self.tryGetStopsMethod2(city: city, routeName: routeName, completion: completion)
+                print("❌ [TDX] 策略\(isRouteID ? "1" : "2")失敗: \(error.localizedDescription)")
+                if isRouteID {
+                    self.tryGetStopsWithRouteName(city: city, routeID: routeIdentifier, completion: completion)
+                } else {
+                    self.tryGetStopsWithStopOfRoute(city: city, routeIdentifier: routeIdentifier, completion: completion)
+                }
             } else if let stops = result, !stops.isEmpty {
-                print("✅ [TDX] 方法1成功！獲得 \(stops.count) 條路線的站點")
-                self.logStopsDetails(stops)
-                // 驗證是否有雙向資料
-                self.validateDirectionData(stops)
+                print("✅ [TDX] 策略\(isRouteID ? "1" : "2")成功！獲得 \(stops.count) 條路線的站點")
                 completion(stops, nil)
             } else {
-                print("⚠️ [TDX] 方法1無資料，嘗試方法2")
-                self.tryGetStopsMethod2(city: city, routeName: routeName, completion: completion)
+                print("⚠️ [TDX] 策略\(isRouteID ? "1" : "2")無資料")
+                if isRouteID {
+                    self.tryGetStopsWithRouteName(city: city, routeID: routeIdentifier, completion: completion)
+                } else {
+                    self.tryGetStopsWithStopOfRoute(city: city, routeIdentifier: routeIdentifier, completion: completion)
+                }
             }
         }
     }
-       
-       // 方法2：使用 StopOfRoute API
-    private func tryGetStopsMethod2(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
-        let urlString = "\(baseURL)/StopOfRoute/City/\(city)/\(routeName)?$format=JSON"
+
+    // 策略2：先獲取 RouteName，再用 DisplayStopOfRoute
+    private func tryGetStopsWithRouteName(city: String, routeID: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
+        print("🔍 [TDX] 策略2 - 先獲取路線名稱")
         
-        guard let url = URL(string: urlString) else {
-            tryGetStopsMethod3(city: city, routeName: routeName, completion: completion)
+        // 先獲取路線資訊以取得真實的 RouteName
+        let routeUrlString = "\(baseURL)/Route/City/\(city)?$filter=RouteID eq '\(routeID)'&$format=JSON"
+        
+        guard let routeUrl = URL(string: routeUrlString) else {
+            tryGetStopsWithStopOfRoute(city: city, routeIdentifier: routeID, completion: completion)
             return
         }
         
-        print("🔍 [TDX] 方法2 - StopOfRoute: \(urlString)")
-        
-        performThrottledRequest(url: url) { (result: [BusStop]?, error: Error?) in
-            if let error = error {
-                print("❌ [TDX] 方法2失敗: \(error.localizedDescription)")
-                self.tryGetStopsMethod3(city: city, routeName: routeName, completion: completion)
-            } else if let stops = result, !stops.isEmpty {
-                print("✅ [TDX] 方法2成功！獲得 \(stops.count) 條路線的站點")
-                self.logStopsDetails(stops)
-                self.validateDirectionData(stops)
-                completion(stops, nil)
+        performThrottledRequest(url: routeUrl) { (routes: [BusRoute]?, error: Error?) in
+            if let routes = routes, let firstRoute = routes.first {
+                let routeName = firstRoute.RouteName.Zh_tw
+                print("✅ [TDX] 找到路線名稱: \(routeID) -> \(routeName)")
+                
+                // 用真實的 RouteName 再次嘗試 DisplayStopOfRoute
+                self.tryGetStopsWithDisplayRoute(city: city, routeIdentifier: routeName, isRouteID: false, completion: completion)
             } else {
-                print("⚠️ [TDX] 方法2無資料，嘗試方法3")
-                self.tryGetStopsMethod3(city: city, routeName: routeName, completion: completion)
+                print("❌ [TDX] 無法獲取路線名稱，嘗試 StopOfRoute")
+                self.tryGetStopsWithStopOfRoute(city: city, routeIdentifier: routeID, completion: completion)
             }
         }
     }
-       
-       // 方法3：使用過濾器
-    private func tryGetStopsMethod3(city: String, routeName: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
-        let urlString = "\(baseURL)/DisplayStopOfRoute/City/\(city)?$filter=RouteID eq '\(routeName)'&$format=JSON"
+
+    // 策略3：使用 StopOfRoute API
+    private func tryGetStopsWithStopOfRoute(city: String, routeIdentifier: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
+        let urlString = "\(baseURL)/StopOfRoute/City/\(city)/\(routeIdentifier)?$format=JSON"
         
         guard let url = URL(string: urlString) else {
-            print("❌ [TDX] 所有方法都失敗")
-            completion([], NSError(domain: "TDX", code: -1, userInfo: [NSLocalizedDescriptionKey: "所有API方法都失敗"]))
+            tryGetStopsWithFilter(city: city, routeIdentifier: routeIdentifier, completion: completion)
             return
         }
         
-        print("🔍 [TDX] 方法3 - 使用過濾器: \(urlString)")
+        print("🔍 [TDX] 策略3 - StopOfRoute: \(urlString)")
         
         performThrottledRequest(url: url) { (result: [BusStop]?, error: Error?) in
             if let stops = result, !stops.isEmpty {
-                print("✅ [TDX] 方法3成功！獲得 \(stops.count) 條路線的站點")
-                self.logStopsDetails(stops)
-                self.validateDirectionData(stops)
+                print("✅ [TDX] 策略3成功！獲得 \(stops.count) 條路線的站點")
                 completion(stops, nil)
             } else {
-                print("❌ [TDX] 所有方法都無法獲取站點資料")
-                completion([], NSError(domain: "TDX", code: -404, userInfo: [NSLocalizedDescriptionKey: "找不到該路線的站點資料"]))
+                print("⚠️ [TDX] 策略3無資料，嘗試過濾查詢")
+                self.tryGetStopsWithFilter(city: city, routeIdentifier: routeIdentifier, completion: completion)
             }
         }
     }
-       
-       // 新增：驗證方向資料的方法
-       private func validateDirectionData(_ stops: [BusStop]) {
-           print("🔍 [TDX] === 驗證路線方向資料 ===")
-           
-           for (index, busStop) in stops.enumerated() {
-               let sortedStops = busStop.Stops.sorted { $0.StopSequence < $1.StopSequence }
-               
-               print("   路線\(index + 1):")
-               print("     RouteID: \(busStop.RouteID)")
-               print("     站點數: \(sortedStops.count)")
-               
-               if !sortedStops.isEmpty {
-                   let firstStop = sortedStops[0]
-                   let lastStop = sortedStops[sortedStops.count - 1]
-                   let sequenceRange = "\(firstStop.StopSequence)~\(lastStop.StopSequence)"
-                   
-                   print("     序號範圍: \(sequenceRange)")
-                   print("     起點: \(firstStop.StopName.Zh_tw)")
-                   print("     終點: \(lastStop.StopName.Zh_tw)")
-                   
-                   // 檢查序號是否連續
-                   let sequences = sortedStops.map { $0.StopSequence }
-                   let isConsecutive = sequences.enumerated().allSatisfy { index, seq in
-                       index == 0 || seq == sequences[index - 1] + 1
-                   }
-                   print("     序號連續性: \(isConsecutive ? "連續" : "不連續")")
-               }
-           }
-       }
-       
-       // 詳細記錄站點資訊
-       private func logStopsDetails(_ stops: [BusStop]) {
-           print("📊 [TDX] === 站點資料詳情 ===")
-           for (index, busStop) in stops.enumerated() {
-               print("   路線\(index + 1): RouteID=\(busStop.RouteID), 站點數=\(busStop.Stops.count)")
-               
-               if !busStop.Stops.isEmpty {
-                   let sortedStops = busStop.Stops.sorted { $0.StopSequence < $1.StopSequence }
-                   let firstStop = sortedStops[0]
-                   let lastStop = sortedStops[sortedStops.count - 1]
-                   print("     起點: \(firstStop.StopName.Zh_tw) (序號:\(firstStop.StopSequence))")
-                   print("     終點: \(lastStop.StopName.Zh_tw) (序號:\(lastStop.StopSequence))")
-               }
-           }
-       }
+
+    // 策略4：使用過濾查詢
+    private func tryGetStopsWithFilter(city: String, routeIdentifier: String, completion: @escaping ([BusStop]?, Error?) -> Void) {
+        let urlString = "\(baseURL)/DisplayStopOfRoute/City/\(city)?$filter=RouteID eq '\(routeIdentifier)'&$format=JSON"
+        
+        guard let url = URL(string: urlString) else {
+            completion([], NSError(domain: "TDX", code: -404, userInfo: [NSLocalizedDescriptionKey: "所有方法都失敗"]))
+            return
+        }
+        
+        print("🔍 [TDX] 策略4 - 過濾查詢: \(urlString)")
+        
+        performThrottledRequest(url: url) { (result: [BusStop]?, error: Error?) in
+            if let stops = result, !stops.isEmpty {
+                print("✅ [TDX] 策略4成功！獲得 \(stops.count) 條路線的站點")
+                completion(stops, nil)
+            } else {
+                print("❌ [TDX] 所有策略都失敗")
+                completion([], NSError(domain: "TDX", code: -404, userInfo: [NSLocalizedDescriptionKey: "找不到該路線的站點資料，可能路線不存在或已停駛"]))
+            }
+        }
+    }
        
        // MARK: - 到站時間相關方法
        

@@ -2,7 +2,7 @@
 //  FavoritesView.swift
 //  Off2Go
 //
-//  Created by Heidie Lee on 2025/5/15.
+//  修復收藏路線顯示問題
 //
 
 import SwiftUI
@@ -13,6 +13,7 @@ struct FavoritesView: View {
     @State private var showingDeleteAlert = false
     @State private var routeToDelete: BusRoute?
     @State private var searchText = ""
+    @State private var isLoading = true
     
     private var filteredFavorites: [BusRoute] {
         if searchText.isEmpty {
@@ -30,13 +31,13 @@ struct FavoritesView: View {
         NavigationView {
             VStack(spacing: 0) {
                 if !favoriteRoutes.isEmpty {
-                    // 搜尋欄
                     searchBar
                 }
                 
-                // 內容區域
                 Group {
-                    if favoriteRoutes.isEmpty {
+                    if isLoading {
+                        loadingView
+                    } else if favoriteRoutes.isEmpty {
                         emptyStateView
                     } else if filteredFavorites.isEmpty {
                         emptySearchView
@@ -44,11 +45,11 @@ struct FavoritesView: View {
                         favoritesList
                     }
                 }
+                
+                SmartBannerAdView()
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
             }
-            // 橫幅廣告 - 新增
-            SmartBannerAdView()
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
             .navigationTitle("收藏路線")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -59,7 +60,16 @@ struct FavoritesView: View {
                 }
             }
             .onAppear {
-                loadFavoriteRoutes()
+                print("🔄 [Favorites] onAppear 觸發")
+                loadFavoritesFromUserDefaults()
+            }
+            .onChange(of: favoriteRoutesData) { _ in
+                print("🔄 [Favorites] AppStorage 數據變更，重新載入")
+                loadFavoritesFromUserDefaults()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                print("🔄 [Favorites] App 進入前台，重新載入")
+                loadFavoritesFromUserDefaults()
             }
             .alert("確認刪除", isPresented: $showingDeleteAlert) {
                 Button("刪除", role: .destructive) {
@@ -76,7 +86,38 @@ struct FavoritesView: View {
         }
     }
     
-    // 搜尋欄
+    private func loadFavoritesFromUserDefaults() {
+        print("🔍 [Favorites] === 從 UserDefaults 載入收藏 ===")
+        
+        isLoading = true
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard !favoriteRoutesData.isEmpty else {
+                print("❌ [Favorites] favoriteRoutesData 為空")
+                self.favoriteRoutes = []
+                self.isLoading = false
+                return
+            }
+            
+            print("🔍 [Favorites] favoriteRoutesData 有 \(favoriteRoutesData.count) bytes 資料")
+            
+            do {
+                let decoded = try JSONDecoder().decode([BusRoute].self, from: favoriteRoutesData)
+                self.favoriteRoutes = decoded.sorted { $0.RouteName.Zh_tw < $1.RouteName.Zh_tw }
+                
+                print("✅ [Favorites] 成功載入 \(self.favoriteRoutes.count) 條收藏路線:")
+                for route in self.favoriteRoutes {
+                    print("   - \(route.RouteName.Zh_tw) (ID: \(route.RouteID))")
+                }
+            } catch {
+                print("❌ [Favorites] 解析失敗: \(error.localizedDescription)")
+                self.favoriteRoutes = []
+            }
+            
+            self.isLoading = false
+        }
+    }
+    
     private var searchBar: some View {
         HStack {
             Image(systemName: "magnifyingglass")
@@ -104,12 +145,23 @@ struct FavoritesView: View {
         .padding(.vertical, 8)
     }
     
-    // 空狀態視圖
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                .scaleEffect(1.2)
+            
+            Text("載入收藏中...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
     private var emptyStateView: some View {
         VStack(spacing: 24) {
             Spacer()
             
-            // 圖標動畫
             ZStack {
                 Circle()
                     .fill(.red.opacity(0.1))
@@ -132,7 +184,6 @@ struct FavoritesView: View {
                     .padding(.horizontal, 32)
             }
             
-            // 快速行動按鈕
             NavigationLink(destination: RouteSelectionView()) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -155,7 +206,6 @@ struct FavoritesView: View {
         .background(Color(.systemGroupedBackground))
     }
     
-    // 空搜尋結果視圖
     private var emptySearchView: some View {
         VStack(spacing: 20) {
             Image(systemName: "magnifyingglass")
@@ -181,10 +231,8 @@ struct FavoritesView: View {
         .background(Color(.systemGroupedBackground))
     }
     
-    // 收藏列表
     private var favoritesList: some View {
         List {
-            // 統計信息
             Section {
                 HStack {
                     Image(systemName: "heart.fill")
@@ -205,7 +253,6 @@ struct FavoritesView: View {
                 .listRowBackground(Color.clear)
             }
             
-            // 路線列表
             Section {
                 ForEach(filteredFavorites) { route in
                     NavigationLink(destination: RouteDetailView(route: route)) {
@@ -229,7 +276,6 @@ struct FavoritesView: View {
                 .onDelete(perform: deleteRoutes)
             }
             
-            // 提示信息
             if !favoriteRoutes.isEmpty {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
@@ -247,14 +293,6 @@ struct FavoritesView: View {
         .background(Color(.systemGroupedBackground))
     }
     
-    // 載入收藏路線
-    private func loadFavoriteRoutes() {
-        if let decoded = try? JSONDecoder().decode([BusRoute].self, from: favoriteRoutesData) {
-            favoriteRoutes = decoded.sorted { $0.RouteName.Zh_tw < $1.RouteName.Zh_tw }
-        }
-    }
-    
-    // 從收藏中移除路線
     private func removeFromFavorites(_ route: BusRoute) {
         withAnimation(.easeInOut) {
             favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
@@ -262,7 +300,6 @@ struct FavoritesView: View {
         }
     }
     
-    // 刪除路線（支持編輯模式）
     private func deleteRoutes(at offsets: IndexSet) {
         withAnimation(.easeInOut) {
             favoriteRoutes.remove(atOffsets: offsets)
@@ -270,15 +307,15 @@ struct FavoritesView: View {
         }
     }
     
-    // 保存收藏路線
     private func saveFavoriteRoutes() {
         if let encoded = try? JSONEncoder().encode(favoriteRoutes) {
             favoriteRoutesData = encoded
+            print("💾 [Favorites] 已保存 \(favoriteRoutes.count) 條收藏路線到 AppStorage")
         }
     }
 }
 
-// 收藏路線行視圖
+// MARK: - 收藏路線行視圖 (確保在正確位置)
 struct FavoriteRouteRowView: View {
     let route: BusRoute
     
@@ -345,4 +382,3 @@ struct FavoriteRouteRowView: View {
         .padding(.vertical, 4)
     }
 }
-

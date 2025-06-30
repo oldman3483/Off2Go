@@ -579,13 +579,17 @@ struct RouteSelectionView: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
                 favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
+                print("💔 [RouteSelection] 移除收藏: \(route.RouteName.Zh_tw)")
             } else {
                 favoriteRoutes.append(route)
+                print("❤️ [RouteSelection] 新增收藏: \(route.RouteName.Zh_tw)")
             }
         }
         
+        // 立即保存到 AppStorage
         if let encoded = try? JSONEncoder().encode(favoriteRoutes) {
             favoriteRoutesData = encoded
+            print("💾 [RouteSelection] 已同步到 AppStorage: \(favoriteRoutes.count) 條路線")
         }
     }
 }

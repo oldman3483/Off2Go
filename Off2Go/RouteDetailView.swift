@@ -1101,6 +1101,7 @@ struct FavoriteButton: View {
     let route: BusRoute
     @AppStorage("favoriteRoutes") private var favoriteRoutesData: Data = Data()
     @State private var favoriteRoutes: [BusRoute] = []
+    @State private var isUpdating = false // 防止重複操作
     
     private var isFavorite: Bool {
         favoriteRoutes.contains { $0.RouteID == route.RouteID }
@@ -1111,29 +1112,56 @@ struct FavoriteButton: View {
             Image(systemName: isFavorite ? "heart.fill" : "heart")
                 .font(.title3)
                 .foregroundColor(isFavorite ? .red : .gray)
+                .opacity(isUpdating ? 0.5 : 1.0)
         }
+        .disabled(isUpdating)
         .onAppear {
+            loadFavoriteRoutes()
+        }
+        .onChange(of: favoriteRoutesData) { _ in
             loadFavoriteRoutes()
         }
     }
     
     private func loadFavoriteRoutes() {
+        guard !favoriteRoutesData.isEmpty else {
+            favoriteRoutes = []
+            return
+        }
+        
         if let decoded = try? JSONDecoder().decode([BusRoute].self, from: favoriteRoutesData) {
             favoriteRoutes = decoded
+            print("💙 [FavoriteButton] 載入 \(favoriteRoutes.count) 條收藏路線")
+        } else {
+            favoriteRoutes = []
+            print("❌ [FavoriteButton] 解析收藏失敗")
         }
     }
     
     private func toggleFavorite() {
+        guard !isUpdating else { return }
+        
+        isUpdating = true
+        
         withAnimation(.easeInOut(duration: 0.2)) {
             if favoriteRoutes.contains(where: { $0.RouteID == route.RouteID }) {
                 favoriteRoutes.removeAll { $0.RouteID == route.RouteID }
+                print("💔 [FavoriteButton] 移除收藏: \(route.RouteName.Zh_tw)")
             } else {
                 favoriteRoutes.append(route)
+                print("❤️ [FavoriteButton] 新增收藏: \(route.RouteName.Zh_tw)")
             }
         }
         
+        // 立即保存並同步到 AppStorage
         if let encoded = try? JSONEncoder().encode(favoriteRoutes) {
             favoriteRoutesData = encoded
+            print("💾 [FavoriteButton] 已同步到 AppStorage: \(favoriteRoutes.count) 條路線")
+        }
+        
+        // 延遲重置更新狀態
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isUpdating = false
         }
     }
 }
